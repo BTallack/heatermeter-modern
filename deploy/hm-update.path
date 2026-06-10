@@ -1,0 +1,26 @@
+# systemd path unit that triggers the root host-app update helper.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with the actual
+# spool path substituted (the same way it generates heatermeterd.service), so
+# the PathChanged= path below matches the daemon's data dir on this host.
+#
+# Installed at /etc/systemd/system/hm-update.path:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hm-update.path
+
+[Unit]
+Description=Watch for a HeaterMeter host-app update request
+
+[Path]
+# Level-triggered: fire whenever request.json EXISTS and the service is idle.
+# (Unlike the firmware path's edge-triggered PathChanged, host updates can come
+# back-to-back - e.g. a rollback immediately followed by a re-apply - and an
+# edge trigger silently drops a request written while the previous helper run is
+# still active. PathExists re-checks after the service deactivates, so a request
+# left behind during a prior run is still picked up. The helper consumes
+# request.json by renaming it, so the condition clears and does not loop.)
+PathExists=/home/brennan/heatermeter-modern/data/hostupdate/spool/request.json
+Unit=hm-update.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+@import '@fontsource-variable/work-sans';
+@import '@fontsource-variable/roboto-slab';
+@import 'tailwindcss';
+@import 'konsta/svelte/theme.css';
+
+/* Force dark via the .dark class on <html> (Tailwind v4 class strategy). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Make sure Tailwind scans Konsta's components for the classes it uses. */
+@source '../node_modules/konsta/svelte';
+
+/* Typography (self-hosted, offline): Work Sans for body/UI text, Roboto Slab
+   (slab serif) reserved for large display text + headings. Tailwind v4 turns
+   each --font-* key into a utility, so --font-display gives a `font-display`
+   class for ad-hoc large elements (e.g. the big temperature numbers). */
+@theme {
+  --font-sans: 'Work Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Roboto Slab Variable', ui-serif, Georgia, serif;
+}
+
+/* Ember-orange accent (matches the pit color). Overrides Konsta's primary so
+   the navbar/tabbar/buttons pick it up. Must come after the konsta import. */
+:root {
+  --k-color-primary: #ff5630;
+  --k-color-ios-primary: #ff5630;
+  --k-color-ios-primary-tint: #ff7a5c;
+  --k-color-ios-primary-shade: #e8431f;
+  --k-color-md-dark-primary: #ff5630;
+  --k-color-md-light-primary: #ff5630;
+}
+
+/* Theme-aware background (light by default, dark when .dark is on <html>). */
+html, body { margin: 0; }
+html {
+  background: #f2f3f5;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+html.dark { background: #0b0e11; }
+
+/* Konsta applies its iOS/Material system font stack to the app root (.k-ios /
+   .k-material), which would otherwise cascade the system font (SF) over
+   everything. Re-assert our body typeface (Work Sans) from the app root. */
+.k-ios,
+.k-material { font-family: var(--font-sans); }
+
+/* Headings use the Roboto Slab display face. Large display numbers + the brand
+   wordmark opt in via the `font-display` utility on the element. */
+h1, h2, h3, summary { font-family: var(--font-display); }
+
+/* uPlot's legend defaults to a system-ui font; match the app body font. */
+.u-legend { font-family: var(--font-sans); }
+
+/* Tabular figures so live readouts don't jiggle as digits change. */
+.nums { font-variant-numeric: tabular-nums; }
+
+/* App card surface (theme-aware). Used instead of Konsta <Card> so margins and
+   spacing are fully under our control — Konsta's Card adds its own margins that
+   were collapsing the gap between rows. Radius/padding via Tailwind on the el. */
+.hm-card { background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.06); }
+html.dark .hm-card { background: #171717; border-color: rgba(255, 255, 255, 0.07); }
+

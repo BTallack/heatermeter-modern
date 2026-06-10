@@ -1,0 +1,25 @@
+# systemd service that runs the root host-app update helper once per request.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with this host's
+# paths/identity substituted into the HM_UPDATE_* environment. This is the single
+# privileged actor in the host-update path; it runs as root so it can swap the
+# install dir (owned by the daemon user) and restart the service. It is started
+# only by hm-update.path, never enabled to run on its own.
+#
+# Installed at /etc/systemd/system/hm-update.service.
+
+[Unit]
+Description=HeaterMeter host-app update (root, oneshot)
+
+[Service]
+Type=oneshot
+# install_root, the daemon user, the service name and the health-check port come
+# from here (root-controlled), NOT from the daemon's request file, so a
+# compromised daemon cannot redirect the swap or the restart.
+Environment=HM_UPDATE_SPOOL=/home/brennan/heatermeter-modern/data/hostupdate/spool
+Environment=HM_UPDATE_INSTALL_ROOT=/home/brennan/heatermeter-modern
+Environment=HM_UPDATE_USER=brennan
+Environment=HM_UPDATE_SERVICE=heatermeterd
+Environment=HM_UPDATE_PORT=8080
+ExecStart=/usr/local/sbin/hm-update
+TimeoutStartSec=240

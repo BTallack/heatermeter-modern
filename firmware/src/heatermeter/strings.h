@@ -1,0 +1,35 @@
+// HeaterMeter Copyright 2019 Bryan Mayland <bmayland@capnbry.net>
+#ifndef __STRINGS_H__
+#define __STRINGS_H__
+
+#include "serialxor.h"
+#include <avr/pgmspace.h>
+
+#define CSV_DELIMITER ","
+
+#ifndef HM_BOARD_REV
+#define HM_BOARD_REV 'B'
+#endif
+
+#define DEGREE "\xdf" // \xdf is the degree symbol on the Hitachi HD44780
+// Tallack fork build: base upstream 20210202 + watchdog, pidMode in $HMSU,
+// /set?pc echo, larger serial buffer. The "-hm1" suffix distinguishes our build
+// in $UCID (HM_BOARD_REV 'B' is still appended after this string).
+#define HM_VERSION "20260610-hm4"
+
+const char LCD_LINE1_UNPLUGGED[] PROGMEM = "- No Pit Probe -";
+
+const char LCD_PROBETYPE_DISABLED[] PROGMEM = "Disable";
+const char LCD_PROBETYPE_THERMISTOR[] PROGMEM = "Thermis";
+const char LCD_PROBETYPE_RFM12[] PROGMEM = "RFWirel";
+const char LCD_PROBETYPE_THERMOCOUPLE[] PROGMEM = "Kcouple";
+const char * const LCD_PROBETYPES[] PROGMEM = {
+  LCD_PROBETYPE_DISABLED, LCD_PROBETYPE_THERMISTOR, LCD_PROBETYPE_RFM12, LCD_PROBETYPE_THERMOCOUPLE
+};
+
+inline void Serial_char(char c) { SerialX.write(c); }
+inline void Serial_nl(void) { SerialX.nl(); }
+inline void Serial_csv(void) { Serial_char(CSV_DELIMITER[0]); }
+inline void print_P(const char *s) {  while (unsigned char c = pgm_read_byte(s++)) Serial_char(c); }
+
+#endif /* __STRINGS_H__ */

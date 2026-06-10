@@ -1,0 +1,29 @@
+# systemd unit for the HeaterMeter host daemon.
+#
+# Installed on the Pi at /etc/systemd/system/heatermeterd.service. Tailored to a
+# home-directory checkout; adjust the paths/User if you deploy elsewhere.
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now heatermeterd
+#   journalctl -u heatermeterd -f      # live logs
+
+[Unit]
+Description=HeaterMeter host daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brennan
+Group=dialout
+WorkingDirectory=/home/brennan/heatermeter-modern/backend
+ExecStart=/home/brennan/heatermeter-modern/.venv/bin/python -m heatermeterd.main --serial /dev/serial0 --port 8080 --db /home/brennan/heatermeter-modern/data/hm.sqlite
+Restart=on-failure
+RestartSec=3
+
+# Modest hardening suitable for a home-directory deployment.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

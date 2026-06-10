@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#
+# HeaterMeter host-app update helper (runs as ROOT, oneshot, started by
+# hm-update.path when the daemon writes a request file). This is the ONLY
+# privileged actor in the host-update path: it swaps the daemon code + the
+# pre-built frontend into the install root and restarts the service. The
+# unprivileged daemon only downloads + verifies the artifact and hands off.
+#
+# Contract:
+#   - Reads $HM_UPDATE_SPOOL/request.json (job_id, action, version, tarball,
+#     sha256). install_root, the service name, user and port come from the
+#     systemd unit's environment (root-controlled), NOT from the request, so a
+#     compromised daemon cannot redirect the swap.
+#   - For "update": re-verifies the tarball sha256, extracts it, sanity-checks
+#     the tree, backs up the live install to .hm-previous, swaps in the new
+#     backend/heatermeterd + frontend/dist, restarts the service, then HEALTH
+#     CHECKS it. If the new build does not answer, it AUTO-ROLLS-BACK and
+#     restarts again, so a bad release cannot leave the device unreachable.
+#   - For "rollback": restores .hm-previous and restarts.
+#   - Streams JSONL progress to hostupdate.progress.jsonl and a single atomic
+#     hostupdate.result.json (stable names; the daemon reads them after the
+#     restart replaces it).
+#
+# Paths/identity come from the environment (set by the generated systemd unit)
+# so this script is deployment-agnostic. See deploy/install.sh.
+set -euo pipefail
+
+SPOOL="${HM_UPDATE_SPOOL:?HM_UPDATE_SPOOL not set}"
+ROOT="${HM_UPDATE_INSTALL_ROOT:?HM_UPDATE_INSTALL_ROOT not set}"
+USER_="${HM_UPDATE_USER:-brennan}"
+SERVICE="${HM_UPDATE_SERVICE:-heatermeterd}"
+PORT="${HM_UPDATE_PORT:-8080}"
+
+REQ="$SPOOL/request.json"
+[ -f "$REQ" ] || exit 0                      # spurious trigger; nothing to do
+
+CONSUMING="$SPOOL/request.consuming"
+mv -f "$REQ" "$CONSUMING"
+
+PROG="$SPOOL/hostupdate.progress.jsonl"
+RES="$SPOOL/hostupdate.result.json"
+LOG="$SPOOL/hostupdate.log"
+: >"$PROG"
+: >"$LOG"
+
+_fixperms() {
+  chown "$USER_":"$USER_" "$@" 2>/dev/null || true
+  chmod 0644 "$@" 2>/dev/null || true
+}
+
+# jq is required to parse the request. Without it, hand-write an error result so
+# the daemon reports it instead of waiting for its timeout.
+if ! command -v jq >/dev/null 2>&1; then
+  jid="$(sed -n 's/.*"job_id"[: ]*"\([^"]*\)".*/\1/p' "$CONSUMING" 2>/dev/null)"
+  printf '{"job_id":"%s","status":"error","message":"jq is not installed on the host","version":"","action":""}\n' \
+    "$jid" >"$RES" 2>/dev/null || true
+  _fixperms "$RES"
+  exit 1
+fi
+
+JOB="$(jq -r '.job_id' "$CONSUMING")"
+ACTION="$(jq -r '.action' "$CONSUMING")"
+VER="$(jq -r '.version' "$CONSUMING")"
+TARBALL="$(jq -r '.tarball // empty' "$CONSUMING")"
+WANT_SHA="$(jq -r '.sha256 // empty' "$CONSUMING")"
+
+PREV="$ROOT/.hm-previous"
+EXTRACT="$SPOOL/extract-$JOB"
+
+emit() {  # emit <step> <message>
+  printf '{"ts":%s,"step":"%s","msg":%s}\n' \
+    "$(date +%s)" "$1" "$(jq -Rn --arg m "$2" '$m')" >>"$PROG"
+  _fixperms "$PROG"
+}
+
+finish() {  # finish <status> <message> [version]
+  jq -n --arg job "$JOB" --arg status "$1" --arg msg "$2" \
+        --arg ver "${3:-$VER}" --arg act "$ACTION" \
+     '{job_id:$job,status:$status,message:$msg,version:$ver,action:$act}' \
+     >"$RES.tmp"
+  mv -f "$RES.tmp" "$RES"
+  _fixperms "$RES" "$PROG" "$LOG"
+}
+
+cleanup() {
+  rc=$?
+  rm -rf "$EXTRACT" 2>/dev/null || true
+  [ -f "$RES" ] || finish error "update helper aborted (rc=$rc) before writing a result"
+}
+trap cleanup EXIT
+
+# Copy a dir into place via a temp + mv swap so an interrupted copy never leaves
+# a half-populated live dir. src has a trailing name; dst is replaced wholesale.
+swap_dir() {  # swap_dir <src> <dst>
+  local src="$1" dst="$2"
+  rm -rf "$dst.new"
+  cp -a "$src" "$dst.new"
+  rm -rf "$dst.old"
+  [ -e "$dst" ] && mv "$dst" "$dst.old"
+  mv "$dst.new" "$dst"
+  rm -rf "$dst.old"
+}
+
+# Restart the service and poll its HTTP status endpoint. Returns 0 if it answers
+# within the window, 1 otherwise. curl absent => skip the check (assume healthy).
+restart_and_check() {
+  systemctl restart "$SERVICE" >>"$LOG" 2>&1 || true
+  command -v curl >/dev/null 2>&1 || { sleep 3; return 0; }
+  for _ in $(seq 1 30); do
+    sleep 1
+    if curl -fsS "http://127.0.0.1:$PORT/api/status" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+restore_previous() {  # used by rollback and by auto-rollback on a failed health check
+  [ -d "$PREV/heatermeterd" ] || return 1
+  swap_dir "$PREV/heatermeterd" "$ROOT/backend/heatermeterd"
+  [ -d "$PREV/dist" ] && swap_dir "$PREV/dist" "$ROOT/frontend/dist"
+  chown -R "$USER_":"$USER_" "$ROOT/backend/heatermeterd" "$ROOT/frontend/dist" 2>/dev/null || true
+}
+
+emit start "host update helper started for $VER ($ACTION)"
+
+# ----- rollback -------------------------------------------------------------
+if [ "$ACTION" = "rollback" ]; then
+  if ! restore_previous; then
+    finish error "no previous version is available to roll back to"; exit 1
+  fi
+  emit swap "restored previous version"
+  if restart_and_check; then
+    finish ok "rolled back to the previous version"; exit 0
+  fi
+  finish error "rolled back, but the service did not come up; check logs"; exit 1
+fi
+
+# ----- update ---------------------------------------------------------------
+[ -n "$TARBALL" ] && [ -f "$TARBALL" ] || { finish error "update artifact missing"; exit 1; }
+
+# 1. Re-verify the artifact integrity (corruption guard; the daemon already
+#    checked against the manifest, this guards the handoff path too).
+GOT="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
+if [ -z "$WANT_SHA" ] || [ "$GOT" != "$WANT_SHA" ]; then
+  finish error "artifact sha256 mismatch, refusing to apply"; exit 1
+fi
+emit verified "artifact sha256 verified"
+
+# 2. Extract and sanity-check the tree before touching the live install.
+rm -rf "$EXTRACT"; mkdir -p "$EXTRACT"
+tar -xzf "$TARBALL" -C "$EXTRACT" >>"$LOG" 2>&1 \
+  || { finish error "could not extract the update artifact"; exit 1; }
+for rel in backend/heatermeterd/__init__.py backend/heatermeterd/service.py frontend/dist/index.html; do
+  [ -f "$EXTRACT/$rel" ] || { finish error "artifact is missing $rel"; exit 1; }
+done
+emit extracted "artifact extracted and validated"
+
+# 3. Back up the live install (this is the rollback image).
+rm -rf "$PREV"; mkdir -p "$PREV"
+cp -a "$ROOT/backend/heatermeterd" "$PREV/heatermeterd"
+[ -d "$ROOT/frontend/dist" ] && cp -a "$ROOT/frontend/dist" "$PREV/dist"
+emit backup "current version backed up"
+
+# 4. Swap in the new code + frontend, then fix ownership back to the daemon user.
+swap_dir "$EXTRACT/backend/heatermeterd" "$ROOT/backend/heatermeterd"
+swap_dir "$EXTRACT/frontend/dist" "$ROOT/frontend/dist"
+chown -R "$USER_":"$USER_" "$ROOT/backend/heatermeterd" "$ROOT/frontend/dist" 2>/dev/null || true
+emit swap "new version installed"
+
+# 5. Record success BEFORE restarting so the rebooted daemon surfaces it, then
+#    restart and health-check the new build.
+finish ok "updated to $VER" "$VER"
+emit restart "restarting service"
+if restart_and_check; then
+  exit 0
+fi
+
+# 6. The new build did not answer: auto-roll-back and restart again so the
+#    device is never left unreachable by a bad release.
+emit rollback "new build did not come up; rolling back"
+restore_previous || true
+finish error "update to $VER failed its health check and was rolled back"
+systemctl restart "$SERVICE" >>"$LOG" 2>&1 || true
+exit 1

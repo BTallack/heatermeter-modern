@@ -1,0 +1,22 @@
+# systemd service that runs the root AVR flash helper once per request.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with the actual
+# spool path substituted into HM_FLASH_SPOOL. This is the single privileged
+# actor in the firmware-update path; it runs as root so it can load/unload the
+# SPI device-tree overlay. It is started only by hm-flash.path, never enabled to
+# run on its own.
+#
+# Installed at /etc/systemd/system/hm-flash.service.
+
+[Unit]
+Description=HeaterMeter AVR flash (root, oneshot)
+
+[Service]
+Type=oneshot
+# Root: required only to load/unload the SPI overlay via dtoverlay. avrdude and
+# gpioset reach the device nodes via group membership once SPI is up.
+Environment=HM_FLASH_SPOOL=/home/brennan/heatermeter-modern/data/firmware/spool
+Environment=HM_FLASH_FWDIR=/usr/local/share/heatermeter/firmware
+Environment=HM_FLASH_GROUP=dialout
+ExecStart=/usr/local/sbin/hm-flash
+TimeoutStartSec=240

@@ -1,0 +1,15 @@
+# systemd service that powers off the Pi once, on request.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with this host's
+# spool path. Started only by hm-power.path, never enabled on its own. Runs as
+# root because powering off the system requires it.
+#
+# Installed at /etc/systemd/system/hm-power.service.
+
+[Unit]
+Description=HeaterMeter system poweroff (root, oneshot)
+
+[Service]
+Type=oneshot
+Environment=HM_POWER_SPOOL=/home/brennan/heatermeter-modern/data/firmware/spool
+ExecStart=/usr/local/sbin/hm-power

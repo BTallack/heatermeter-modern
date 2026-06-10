@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Captures and local data
+*.log
+*.rrd
+data/
+*.sqlite
+*.sqlite3
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.svelte-kit/
+
+# OS / editor
+.DS_Store
+*~
+.idea/
+.vscode/
+
+# Firmware build output + device-specific backups (sources + release hexes ARE tracked)
+firmware/build*/
+firmware/out*/
+firmware/backup-*
+*.elf
+
+# Claude Code local config
+.claude/

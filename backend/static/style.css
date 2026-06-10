@@ -1,0 +1,351 @@
+:root {
+  --bg: #111417;
+  --panel: #1a1f24;
+  --panel-2: #232a31;
+  --line: #2c343c;
+  --text: #e7edf3;
+  --muted: #8a97a3;
+  --pit: #ff5630;
+  --set: #b3bac1;
+  --food1: #36b37e;
+  --food2: #00b8d9;
+  --fan: #ffab00;
+  --go: #2684ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.flame { font-size: 20px; }
+.title { font-weight: 700; font-size: 18px; letter-spacing: 0.3px; }
+.device { color: var(--muted); font-size: 13px; }
+
+.conn { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+.dot--on { background: #36b37e; box-shadow: 0 0 8px #36b37e88; }
+.dot--off { background: #ff5630; }
+
+main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.card__label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; }
+.card__value { font-size: 38px; font-weight: 700; line-height: 1.05; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.card__value .unit { font-size: 18px; color: var(--muted); margin-left: 3px; font-weight: 600; }
+.card__sub { color: var(--fan); font-size: 13px; font-weight: 600; min-height: 16px; }
+
+.card--pit { grid-column: span 2; }
+.card--pit .card__value { font-size: 60px; color: var(--pit); }
+.card--set { grid-column: span 2; }
+.card--set .card__value { color: var(--text); }
+.card--fan .card__value { color: var(--fan); }
+.card--food .card__sub { color: var(--food1); }
+
+/* PID internals card (P/I/D component bars) */
+.card--pid .card__sub { color: var(--muted); }
+.pid-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.pid-bar { display: flex; align-items: center; gap: 6px; }
+.pid-bar__lbl { flex: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.pid-bar__track { flex: 1; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.pid-bar__fill { height: 100%; width: 0%; transition: width 0.4s ease; border-radius: 4px; }
+.pid-bar__fill.pid-p { background: #36b37e; }
+.pid-bar__fill.pid-i { background: #00b8d9; }
+.pid-bar__fill.pid-d { background: #a78bfa; }
+.pid-bar__fill.neg { background: var(--pit); }
+.pid-bar__val { flex: 0 0 44px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* Clickable probe name labels (rename on click). */
+.probe-name { transition: color 0.15s; }
+.probe-name:hover { color: var(--text); text-decoration: underline dotted; }
+
+/* Per-food-probe "Set target" quick button. */
+.targetbtn {
+  margin-top: 8px; align-self: flex-start;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+}
+.targetbtn:hover { color: var(--text); border-color: #3a444d; }
+
+/* Running cook-program banner */
+.program-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(167,139,250,0.15), var(--panel));
+  border: 1px solid #5b4bb3; border-radius: 12px;
+}
+.program-banner__main { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.program-banner__icon { font-size: 18px; }
+.program-banner__actions { display: flex; gap: 8px; }
+.spbtn--danger { background: var(--pit); border-color: var(--pit); color: #fff; }
+
+/* Cook-program stage builder */
+.stage {
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  margin-bottom: 10px; background: var(--panel-2);
+}
+.stage__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.stage__num { font-weight: 600; font-size: 13px; }
+.stage__row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.stage__row label { flex: 0 0 64px; color: var(--muted); font-size: 12px; }
+.stage__row input { flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+.stage__row--cond { padding-left: 72px; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
+.stage__row--cond input, .stage__row--cond select { background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+
+/* Public share link under a session row */
+.session__share { margin-top: 6px; font-size: 12px; word-break: break-all; }
+.share-link { color: var(--go); }
+
+/* Live program stage list (in the drawer) */
+.prog-stage { padding: 6px 10px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+.prog-stage.current { background: rgba(167,139,250,0.18); color: var(--text); font-weight: 600; }
+.prog-stage.done { color: #5a6470; text-decoration: line-through; }
+
+/* Setpoint control: wrap within the card so nothing spills past the border. */
+.setctl {
+  display: flex; gap: 6px; margin-top: 8px; align-items: center;
+  flex-wrap: wrap;
+}
+.setctl input {
+  flex: 1 1 56px; min-width: 0; width: auto;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
+  font-size: 15px; text-align: center;
+}
+.setctl .spbtn { flex: 0 0 auto; }
+
+.quickpicks { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.quickpicks button {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 9px; font-size: 12px; cursor: pointer;
+}
+.quickpicks button:hover { color: var(--text); border-color: #3a444d; }
+.spbtn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; font-size: 14px; cursor: pointer;
+}
+.spbtn:hover { border-color: #3a444d; }
+.spbtn--go { background: var(--go); border-color: var(--go); color: #fff; font-weight: 600; }
+
+.bar { height: 6px; background: var(--panel-2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.bar__fill { height: 100%; width: 0%; background: var(--fan); transition: width 0.4s ease; }
+
+.chartwrap {
+  margin-top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+}
+.chart-controls { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.chart-controls select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 8px;
+}
+.chart-controls label { color: var(--muted); font-size: 13px; }
+
+/* uPlot dark tweaks */
+.u-legend { color: var(--text); font-size: 13px; }
+.u-axis { color: var(--muted); }
+
+@media (max-width: 520px) {
+  .card--pit { grid-column: span 2; }
+  .card--pit .card__value { font-size: 48px; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Settings drawer (Phase 2)                                          */
+/* ------------------------------------------------------------------ */
+
+.iconbtn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 9px; font-size: 16px; cursor: pointer; line-height: 1;
+}
+.iconbtn:hover { border-color: #3a444d; }
+
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 20;
+}
+
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 90vw;
+  background: var(--panel); border-left: 1px solid var(--line); z-index: 21;
+  display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+}
+.drawer__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+}
+.drawer__head h2 { margin: 0; font-size: 17px; }
+.drawer__body { padding: 16px 18px; overflow-y: auto; }
+
+/* Settings: a centered full panel with tabs (replaces the side drawer for
+   #settingsPanel). The .drawer__head styling is reused for the header. */
+.settings-modal {
+  position: fixed; z-index: 21; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(980px, 94vw); height: min(88vh, 940px);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 16px 56px rgba(0,0,0,0.5);
+}
+.tabbar {
+  flex: 0 0 auto; display: flex; gap: 2px; padding: 6px 10px 0;
+  border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.tabbar button {
+  background: transparent; border: none; color: var(--muted);
+  padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; border-radius: 7px 7px 0 0;
+  border-bottom: 2px solid transparent;
+}
+.tabbar button:hover { color: var(--text); background: var(--panel-2); }
+.tabbar button.active { color: var(--text); border-bottom-color: var(--go); }
+.settings-status { flex: 0 0 auto; padding: 6px 18px 0; }
+.settings-status .msg { margin: 0; }
+.settings-body {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px;
+  display: grid; gap: 14px; align-items: start; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.settings-body .set-group { margin: 0; }
+/* A card that needs more width (e.g. Food Targets, so preset names aren't cut
+   off). Spans two grid columns when the grid has room; harmless at 1 column. */
+.settings-body .set-group--wide { grid-column: span 2; }
+/* A target row that's inactive (ambient probe not toggled to a food probe). */
+.set-row--disabled { opacity: 0.45; }
+
+/* Timeline notes strip under the chart (text + optional photo thumbnail). */
+.notes-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding: 10px 2px 2px;
+  margin-top: 6px;
+}
+.note-chip {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  max-width: 280px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 10px; font-size: 12px;
+}
+.note-thumb {
+  width: 40px; height: 40px; object-fit: cover; border-radius: 6px;
+  display: block; background: var(--bg);
+}
+.note-chip__txt { display: flex; flex-direction: column; min-width: 0; }
+.note-chip__time { color: var(--muted); font-size: 11px; }
+.note-chip__txt span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .settings-modal {
+    width: 100vw; height: 100dvh; max-width: none; top: 0; left: 0;
+    transform: none; border-radius: 0; border: none;
+  }
+}
+
+.msg { min-height: 18px; margin: 0 0 8px; font-size: 13px; color: var(--food1); }
+.msg.err { color: var(--pit); }
+
+.set-group {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  margin-bottom: 14px; background: var(--panel-2);
+}
+.set-group h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; }
+.set-group .hint { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+.set-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.set-row label { flex: 0 0 120px; color: var(--muted); font-size: 13px; }
+.set-row input {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 14px;
+}
+
+.alarm-head, .alarm-row { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px; }
+.alarm-head { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.alarm-row { margin-bottom: 8px; align-items: center; }
+.alarm-row label { color: var(--muted); font-size: 13px; }
+.alarm-row input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; font-size: 14px; min-width: 0;
+}
+
+.savebtn {
+  width: 100%; margin-top: 4px; background: var(--go); border: 1px solid var(--go);
+  color: #fff; font-weight: 600; border-radius: 8px; padding: 9px; font-size: 14px;
+  cursor: pointer;
+}
+.savebtn:hover { filter: brightness(1.08); }
+.savebtn:active { transform: translateY(1px); }
+.savebtn:disabled { opacity: 0.5; cursor: default; }
+
+/* Select inputs inside the drawer (probe types, presets). */
+.ptsel {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 14px;
+}
+
+/* Sessions list */
+.session {
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  margin-bottom: 10px; background: var(--panel-2);
+}
+.session__top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.session__name { font-weight: 600; font-size: 14px; }
+.session__name[contenteditable] { outline: none; border-bottom: 1px dashed transparent; }
+.session__name[contenteditable]:focus { border-bottom-color: var(--go); }
+.session__meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.session__actions { display: flex; gap: 6px; margin-top: 8px; }
+.session.active { border-color: var(--food1); }
+.linkbtn {
+  background: none; border: none; color: var(--go); font-size: 12px;
+  cursor: pointer; padding: 2px 4px;
+}
+.linkbtn:hover { text-decoration: underline; }
+.linkbtn--danger { color: var(--pit); }
+
+/* Note dialog */
+.dialog {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 22; width: 360px; max-width: 90vw;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.dialog h3 { margin: 0 0 12px; font-size: 16px; }
+.dialog input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font-size: 14px;
+}
+.dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+[hidden] { display: none !important; }

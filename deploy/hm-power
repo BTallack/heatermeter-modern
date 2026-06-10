@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# HeaterMeter system poweroff helper (runs as ROOT, oneshot, started by
+# hm-power.path when the daemon writes a poweroff request). The daemon runs as a
+# non-root user with NoNewPrivileges, so it cannot power off the Pi itself; it
+# writes a request file and systemd activates this helper as root.
+#
+# The request file's contents select the mode: "now" powers off; "dryrun" only
+# logs (so the IPC chain can be validated without actually shutting down).
+set -euo pipefail
+
+SPOOL="${HM_POWER_SPOOL:?HM_POWER_SPOOL not set}"
+REQ="$SPOOL/poweroff.request"
+LOG="$SPOOL/poweroff.log"
+
+[ -f "$REQ" ] || exit 0
+mode="$(cat "$REQ" 2>/dev/null || echo)"
+rm -f "$REQ"
+printf '%s request mode=%s\n' "$(date)" "$mode" >>"$LOG" 2>/dev/null || true
+chgrp dialout "$LOG" 2>/dev/null || true
+chmod 0664 "$LOG" 2>/dev/null || true
+
+if [ "$mode" = "dryrun" ]; then
+  printf '%s dryrun: would power off now\n' "$(date)" >>"$LOG" 2>/dev/null || true
+  exit 0
+fi
+
+sync
+systemctl poweroff

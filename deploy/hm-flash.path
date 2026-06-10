@@ -1,0 +1,22 @@
+# systemd path unit that triggers the root AVR flash helper.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with the actual
+# spool path substituted (the same way it generates heatermeterd.service), so
+# the PathChanged= path below matches the daemon's data dir on this host.
+#
+# Installed at /etc/systemd/system/hm-flash.path:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hm-flash.path
+
+[Unit]
+Description=Watch for a HeaterMeter firmware flash request
+
+[Path]
+# Edge-triggered on create/modify. The daemon writes request.json atomically
+# (one create per job) and the helper consumes it immediately, so a later
+# request re-triggers cleanly.
+PathChanged=/home/brennan/heatermeter-modern/data/firmware/spool/request.json
+Unit=hm-flash.service
+
+[Install]
+WantedBy=multi-user.target

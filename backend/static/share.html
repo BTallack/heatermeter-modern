@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111417">
+  <title>HeaterMeter - Shared Cook</title>
+  <link rel="stylesheet" href="/vendor/uPlot.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="flame">&#x1f525;</span>
+      <span class="title">HeaterMeter</span>
+      <span class="device">shared cook</span>
+    </div>
+    <div class="conn"><span id="meta" style="color:var(--muted);font-size:13px"></span></div>
+  </header>
+
+  <main>
+    <h2 id="cookName" style="margin:6px 0 2px"></h2>
+    <p id="cookTime" class="hint" style="margin:0 0 12px"></p>
+    <section class="chartwrap"><div id="chart"></div></section>
+    <p class="hint" style="text-align:center;margin-top:16px">Read-only shared view. Powered by HeaterMeter (open source).</p>
+  </main>
+
+  <script src="/vendor/uPlot.iife.min.js"></script>
+  <script>
+    "use strict";
+    const token = location.pathname.split("/").pop();
+    function axisTheme() {
+      return { stroke: "#8a97a3", grid: { stroke: "#2c343c", width: 1 },
+               ticks: { stroke: "#2c343c", width: 1 } };
+    }
+    function fmtTime(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ""; }
+    function fmtDur(a, b) {
+      if (!a || !b) return "";
+      const s = Math.round(b - a), h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+    let notes = [];
+    function notesPlugin() {
+      return { hooks: { draw: (u) => {
+        if (!notes.length) return;
+        const ctx = u.ctx, { left, top, width, height } = u.bbox;
+        ctx.save(); ctx.strokeStyle = "#ffab00"; ctx.fillStyle = "#ffab00";
+        ctx.lineWidth = 1; ctx.font = "11px sans-serif";
+        for (const n of notes) {
+          const x = u.valToPos(n.ts, "x", true);
+          if (x < left || x > left + width) continue;
+          ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke();
+          ctx.setLineDash([]); ctx.save(); ctx.translate(x + 3, top + 4);
+          ctx.fillText(String(n.text).slice(0, 24), 0, 8); ctx.restore();
+        }
+        ctx.restore();
+      } } };
+    }
+    async function load() {
+      let d;
+      try {
+        const r = await fetch("/api/share/" + encodeURIComponent(token));
+        if (!r.ok) throw new Error("not found");
+        d = await r.json();
+      } catch (e) {
+        document.getElementById("cookName").textContent = "Cook not found or sharing disabled.";
+        return;
+      }
+      document.getElementById("cookName").textContent = d.name || "Shared Cook";
+      document.getElementById("cookTime").textContent =
+        fmtTime(d.started_ts) + (d.ended_ts ? " · " + fmtDur(d.started_ts, d.ended_ts) : " · in progress");
+      notes = d.notes || [];
+      const h = d.history || {};
+      const data = [h.t || [], h.set_point || [], h.pit || [], h.food1 || [], h.food2 || []];
+      const el = document.getElementById("chart");
+      new uPlot({
+        width: el.clientWidth || 800, height: 380,
+        scales: { x: { time: true } }, legend: { live: false },
+        plugins: [notesPlugin()],
+        series: [
+          {},
+          { label: "Set", stroke: "#b3bac1", dash: [6, 4], width: 1 },
+          { label: "Pit", stroke: "#ff5630", width: 2 },
+          { label: "Food 1", stroke: "#36b37e", width: 2 },
+          { label: "Food 2", stroke: "#00b8d9", width: 2 },
+        ],
+        axes: [Object.assign({}, axisTheme()), Object.assign({ size: 50 }, axisTheme())],
+      }, data, el);
+    }
+    load();
+  </script>
+</body>
+</html>

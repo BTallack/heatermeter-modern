@@ -1,0 +1,16 @@
+# systemd path unit that triggers the root system-poweroff helper.
+#
+# Reference copy. deploy/install.sh GENERATES the installed unit with this host's
+# spool path substituted (the same spool the firmware updater uses).
+#
+# Installed at /etc/systemd/system/hm-power.path.
+
+[Unit]
+Description=Watch for a HeaterMeter poweroff request
+
+[Path]
+PathChanged=/home/brennan/heatermeter-modern/data/firmware/spool/poweroff.request
+Unit=hm-power.service
+
+[Install]
+WantedBy=multi-user.target

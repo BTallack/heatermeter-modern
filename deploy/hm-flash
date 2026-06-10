@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# HeaterMeter AVR flash helper (runs as ROOT, oneshot, started by hm-flash.path
+# when the daemon writes a request file). This is the ONLY privileged actor in
+# the firmware-update path. The unprivileged daemon never flashes directly.
+#
+# Contract:
+#   - Reads $HM_FLASH_SPOOL/request.json  (job_id, action, version, rollback_hex)
+#   - Flashes only images from the TRUSTED dir $HM_FLASH_FWDIR, and only after
+#     the file's sha256 matches that dir's manifest.json (rollback flashes a
+#     backup hex the helper itself wrote earlier, validated to be in the spool).
+#   - Streams JSONL progress to <job>.progress.jsonl, raw tool output to
+#     <job>.flash.log, and a single atomic <job>.result.json at the end.
+#   - try/finally (trap) GUARANTEES SPI is turned back off and the LCD is
+#     re-init pulsed on every exit path, success or failure.
+#
+# Paths come from the environment (set by the generated systemd unit) so this
+# script is deployment-agnostic. See deploy/install.sh and FIRMWARE-UPDATE.md.
+set -euo pipefail
+
+SPOOL="${HM_FLASH_SPOOL:?HM_FLASH_SPOOL not set}"
+FWDIR="${HM_FLASH_FWDIR:-/usr/local/share/heatermeter/firmware}"
+GROUP="${HM_FLASH_GROUP:-dialout}"
+OVERLAY="${HM_FLASH_OVERLAY:-spi0-2cs}"   # mirrors dtparam=spi=on; confirmed at Step 0
+SPIDEV=/dev/spidev0.0
+RESET=/dev/gpiochip0:25                    # avrdude linuxspi reset on GPIO25
+
+REQ="$SPOOL/request.json"
+[ -f "$REQ" ] || exit 0                     # spurious trigger; nothing to do
+
+# Consume the request immediately so a later identical write re-triggers.
+CONSUMING="$SPOOL/request.consuming"
+mv -f "$REQ" "$CONSUMING"
+
+# jq is required to parse the request and emit progress/results. If it is
+# missing we cannot use the normal result path, so hand-write a minimal error
+# result (so the daemon reports it instead of waiting for the timeout) and stop.
+if ! command -v jq >/dev/null 2>&1; then
+  jid="$(sed -n 's/.*"job_id"[: ]*"\([^"]*\)".*/\1/p' "$CONSUMING" 2>/dev/null)"
+  printf '{"job_id":"%s","status":"error","message":"jq is not installed on the host","signature":"","read_version":""}\n' \
+    "$jid" > "$SPOOL/$jid.result.json" 2>/dev/null || true
+  exit 1
+fi
+
+JOB="$(jq -r '.job_id' "$CONSUMING")"
+ACTION="$(jq -r '.action' "$CONSUMING")"
+VER="$(jq -r '.version' "$CONSUMING")"
+ROLLBACK_HEX="$(jq -r '.rollback_hex // empty' "$CONSUMING")"
+
+PROG="$SPOOL/$JOB.progress.jsonl"
+LOG="$SPOOL/$JOB.flash.log"
+RES="$SPOOL/$JOB.result.json"
+: >"$LOG"
+SIG=""
+READVER=""
+OVERLAY_IDX=""
+
+emit() {  # emit <step> <message>
+  printf '{"ts":%s,"step":"%s","msg":%s}\n' \
+    "$(date +%s)" "$1" "$(jq -Rn --arg m "$2" '$m')" >>"$PROG"
+  _fixperms "$PROG"
+}
+
+finish() {  # finish <status> <message>
+  jq -n --arg job "$JOB" --arg status "$1" --arg msg "$2" \
+        --arg sig "$SIG" --arg ver "$READVER" \
+     '{job_id:$job,status:$status,message:$msg,signature:$sig,read_version:$ver}' \
+     >"$RES.tmp"
+  mv -f "$RES.tmp" "$RES"
+  _fixperms "$RES" "$LOG" "$PROG"
+}
+
+_fixperms() {
+  chgrp "$GROUP" "$@" 2>/dev/null || true
+  chmod 0644 "$@" 2>/dev/null || true
+}
+
+# THE SAFETY GUARANTEE: turn SPI back off and re-init the LCD on EVERY exit.
+cleanup() {
+  rc=$?
+  if [ -n "$OVERLAY_IDX" ]; then
+    dtoverlay -r "$OVERLAY_IDX" >>"$LOG" 2>&1 \
+      || dtoverlay -r "$OVERLAY" >>"$LOG" 2>&1 || true
+  fi
+  for _ in $(seq 1 20); do [ -e "$SPIDEV" ] || break; sleep 0.1; done
+  # Pulse GPIO25 so the AVR re-inits the LCD now the SPI pins are free again.
+  gpioset -c gpiochip0 --toggle 60ms,0 25=0 >>"$LOG" 2>&1 || true
+  emit spi_off "SPI disabled, LCD re-init pulsed"
+  [ -f "$RES" ] || finish error "helper aborted (rc=$rc) before writing a result"
+}
+trap cleanup EXIT
+
+emit start "flash helper started for $VER ($ACTION)"
+
+# 1. Resolve the target hex and sha256-verify against the TRUSTED manifest.
+#    Rollback flashes a backup the helper made earlier; it is validated to live
+#    inside the spool rather than sha-checked (it is not a manifest image).
+if [ "$ACTION" = "rollback" ]; then
+  TARGET="$ROLLBACK_HEX"
+  case "$TARGET" in
+    "$SPOOL"/*) : ;;
+    *) finish error "rollback hex is not in the spool"; exit 1 ;;
+  esac
+  [ -f "$TARGET" ] || { finish error "rollback hex not found"; exit 1; }
+else
+  TARGET="$FWDIR/$(jq -r --arg v "$VER" \
+    '.images[] | select(.version==$v) | .file' "$FWDIR/manifest.json")"
+  WANT="$(jq -r --arg v "$VER" \
+    '.images[] | select(.version==$v) | .sha256' "$FWDIR/manifest.json")"
+  [ -f "$TARGET" ] || { finish error "image not in trusted dir"; exit 1; }
+  GOT="$(sha256sum "$TARGET" | cut -d' ' -f1)"
+  if [ "$GOT" != "$WANT" ]; then
+    finish error "sha256 mismatch, refusing to flash"; exit 1
+  fi
+  emit verified "image sha256 verified"
+fi
+
+# 2. Enable SPI at runtime (no reboot). Capture the overlay index so cleanup
+#    removes exactly the overlay we added, never a pre-existing one.
+dtoverlay "$OVERLAY" >>"$LOG" 2>&1
+OVERLAY_IDX="$(dtoverlay -l 2>/dev/null \
+  | awk -v o="$OVERLAY" 'index($0,o){gsub(/[^0-9]/,"",$1); print $1; exit}')"
+for _ in $(seq 1 30); do [ -e "$SPIDEV" ] && break; sleep 0.1; done
+[ -e "$SPIDEV" ] || { finish error "$SPIDEV did not appear after enabling SPI"; exit 1; }
+emit spi_on "SPI enabled"
+
+# 3. Signature gate: refuse unless the AVR identifies as an ATmega328P.
+#    avrdude writes everything to stderr, so fold stderr into the pipe (and tee
+#    a copy to the log) before grepping for the signature.
+SIG="$(avrdude -c linuxspi -p m328p -P "$SPIDEV:$RESET" -B 400kHz 2>&1 \
+       | tee -a "$LOG" | grep -oE '0x1e950f' | head -1 || true)"
+if [ "$SIG" != "0x1e950f" ]; then
+  finish error "wrong or absent AVR signature (${SIG:-none})"; exit 1
+fi
+emit siggate "signature 0x1e950f confirmed"
+
+# 4. ALWAYS back up flash + eeprom + fuses first (this is the rollback image).
+BK="$SPOOL/$JOB"
+avrdude -c linuxspi -p m328p -P "$SPIDEV:$RESET" -B 400kHz \
+  -U "flash:r:$BK-backup-flash.hex:i" -U "eeprom:r:$BK-backup-eeprom.hex:i" \
+  -U lfuse:r:-:h -U hfuse:r:-:h -U efuse:r:-:h >>"$LOG" 2>&1
+_fixperms "$BK-backup-flash.hex" "$BK-backup-eeprom.hex" 2>/dev/null || true
+emit backup "flash + eeprom backed up"
+
+if [ "$ACTION" = "backup" ]; then
+  finish ok "backup complete (no flash performed)"; exit 0
+fi
+
+# 5. Flash. avrdude auto chip-erases and auto-verifies. Fuses are NOT written:
+#    hfuse 0xd7 (EESAVE) already preserves EEPROM across the erase.
+avrdude -c linuxspi -p m328p -P "$SPIDEV:$RESET" -B 400kHz \
+  -U "flash:w:$TARGET:i" >>"$LOG" 2>&1
+emit flashed "flash written and verified"
+
+finish ok "flash complete"
+exit 0
+# cleanup() runs here on EXIT: SPI off + LCD re-init pulse, unconditionally.

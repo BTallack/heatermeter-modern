@@ -1,0 +1,26 @@
+[project]
+name = "heatermeterd"
+version = "0.1.0"
+description = "Modern Raspberry Pi host for the HeaterMeter BBQ controller"
+requires-python = ">=3.11"
+# The pure core (protocol, state) and the dev tools need only the stdlib.
+# Runtime features pull in extras below.
+dependencies = []
+
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+mqtt = ["paho-mqtt>=2.0"]
+# Convenience: everything needed to run the daemon on the Pi.
+pi = ["pyserial>=3.5", "fastapi>=0.110", "uvicorn[standard]>=0.29", "paho-mqtt>=2.0"]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["heatermeterd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

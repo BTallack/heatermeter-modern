@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "images": [
+    {
+      "version": "20260610-hm4",
+      "file": "heatermeter-20260610-hm4.hex",
+      "sha256": "9e9966f9bf7ebbf40c246f9495ac4bfac19af481ddb3e757b74f634d5a011aab",
+      "changelog": "Command checksums: garbled or merged host commands are now rejected instead of executed, fixing rare glitches like a command string becoming a probe name. Fully backward compatible.",
+      "eeprom_reset": false,
+      "board_rev": "B",
+      "min_compat": "20201120"
+    },
+    {
+      "version": "20260602-hm3",
+      "file": "heatermeter-20260602-hm3.hex",
+      "sha256": "26775b6033678f2ce21152dea889c218d17e1e89471567ce7fd8add16fc683e8",
+      "changelog": "Configurable LCD probe rotation interval, with a leading pause so each probe name's start is always readable.",
+      "eeprom_reset": false,
+      "board_rev": "B",
+      "min_compat": "20201120"
+    },
+    {
+      "version": "20260602-hm2",
+      "file": "heatermeter-20260602-hm2.hex",
+      "sha256": "840cfd572283e9f5b19d68fb6034222b64309821cc18e6dd1f3248f202bebb2f",
+      "changelog": "Longer probe names (up to 22 characters) with LCD scrolling. Resets controller settings to defaults, which are saved and restored automatically.",
+      "eeprom_reset": true,
+      "board_rev": "B",
+      "min_compat": "20201120"
+    },
+    {
+      "version": "20260601-hm1",
+      "file": "heatermeter-20260601-hm1.hex",
+      "sha256": "d7f23fb9d5c01f78c0d73d86e545b5ee0f85118630a3d45bb3f913b58546adf7",
+      "changelog": "Watchdog auto-recovery, PID mode reported in status, and serial buffer hardening.",
+      "eeprom_reset": true,
+      "board_rev": "B",
+      "min_compat": "20201120"
+    },
+    {
+      "version": "20210202",
+      "file": "heatermeter-20210202.hex",
+      "sha256": "7b34efba9bdd6c166cf209d057c8fdff68bab9c59fcfe807301a6225a281ebea",
+      "changelog": "Upstream baseline firmware with the front-panel menu navigation fix.",
+      "eeprom_reset": true,
+      "board_rev": "B",
+      "min_compat": "20201120"
+    }
+  ]
+}
