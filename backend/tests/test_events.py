@@ -89,3 +89,21 @@ def test_probe_event_lands_on_timeline():
     svc._on_line(protocol.frame("HMSU,225,198,,,,0,0,0,0,0,4"))
     kinds = [e["kind"] for e in svc.store.list_events()]
     assert "disconnect" in kinds
+
+
+def test_prediction_forecasts_logged_and_throttled():
+    svc, tt = _svc()
+    # ntfy must be "configured" for the ETA path to run; stub the notify config.
+    svc.notify_effective_config = lambda: {"enabled": True, "topic": "t"}
+    # Food1 target 160 (high alarm idx 3), rising steadily from 100.
+    svc._on_line(protocol.frame("HMAL,-1,-1,-1,160,-1,-1,-1,-1"))
+    for i in range(40):
+        tt[0] = 1000.0 + i * 60
+        f1 = 100 + i * 2
+        svc._on_line(protocol.frame(f"HMSU,225,220,{f1},,,0,0,0,0,0,2"))
+    preds = [e for e in svc.store.list_events() if e["kind"] == "prediction"]
+    # ~40 min of samples with a 10-min throttle -> a handful, not dozens.
+    assert 1 <= len(preds) <= 6
+    assert all(p["channel"] == "food1" and p["value"] > 1000.0 for p in preds)
+    # Forecast value is a plausible done-at epoch (after the sample that made it).
+    assert preds[0]["value"] > preds[0]["ts"]

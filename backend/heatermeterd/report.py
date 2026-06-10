@@ -137,10 +137,10 @@ def build_svg(columns: dict, events: Optional[list] = None, *,
         anchor = "start" if i == 0 else ("end" if i == 4 else "middle")
         parts.append(f"<text x='{xx:.1f}' y='{height - 8}' font-size='11' "
                      f"fill='#666' text-anchor='{anchor}'>{_fmt_clock(ts)}</text>")
-    # Event markers (under the series).
+    # Event markers (under the series). Forecast samples are data, not markers.
     for ev in (events or []):
         ts = ev.get("ts")
-        if ts is None or ts < t0 or ts > t1:
+        if ts is None or ts < t0 or ts > t1 or ev.get("kind") == "prediction":
             continue
         color = _EVENT_COLORS.get(ev.get("kind"), "#9aa0a6")
         xx = x(ts)
@@ -203,7 +203,32 @@ def build_report_html(session: dict, columns: dict, events: list, notes: list,
         f"<span class='dot' style='background:"
         f"{_EVENT_COLORS.get(ev.get('kind'), '#9aa0a6')}'></span> "
         f"{e(ev.get('label') or ev.get('kind') or '')}</li>"
-        for ev in events)
+        for ev in events if ev.get("kind") != "prediction")
+
+    # Prediction vs actual: for each probe that reached its target, compare the
+    # logged forecasts (kind=prediction, value=predicted done epoch) against the
+    # actual target time. Shows the earliest forecast and how far off it was.
+    accuracy = []
+    for ev in events:
+        if ev.get("kind") != "target" or not ev.get("channel"):
+            continue
+        actual = ev["ts"]
+        preds = [p for p in events
+                 if p.get("kind") == "prediction"
+                 and p.get("channel") == ev["channel"]
+                 and p.get("value") is not None and p["ts"] < actual]
+        if not preds:
+            continue
+        first = preds[0]
+        err_min = (first["value"] - actual) / 60.0
+        lead_h = (actual - first["ts"]) / 3600.0
+        direction = "late" if err_min > 0 else "early"
+        accuracy.append(
+            f"<li><span class='t'>{e(ev.get('label') or ev['channel'])}</span> "
+            f"first forecast {_fmt_clock(first['value'])} "
+            f"(made {lead_h:.1f}h ahead) vs actual {_fmt_clock(actual)} - "
+            f"{abs(err_min):.0f} min {direction}</li>")
+    acc_rows = "".join(accuracy)
     note_rows = "".join(
         f"<li><span class='t'>{_fmt_clock(n.get('ts'))}</span> "
         f"{e(n.get('text') or '')}"
@@ -250,6 +275,7 @@ def build_report_html(session: dict, columns: dict, events: list, notes: list,
 {rows}
 {f"<tr><td>Fan</td><td>{fan['min']:.0f}%</td><td>{fan['avg']:.0f}%</td><td>{fan['max']:.0f}%</td></tr>" if fan else ""}
 </table>
+{f"<h2>Prediction accuracy</h2><ul>{acc_rows}</ul>" if acc_rows else ""}
 {f"<h2>Timeline</h2><ul>{ev_rows}</ul>" if ev_rows else ""}
 {f"<h2>Notes</h2><ul>{note_rows}</ul>" if note_rows else ""}
 <p class="noprint meta">Use your browser's Print to save this as a PDF.</p>

@@ -102,6 +102,7 @@
       ctx.font = '10px "Work Sans Variable", system-ui, sans-serif';
       ctx.textAlign = 'center';
       for (const ev of events) {
+        if (ev.kind === 'prediction') continue;   // forecast data, not a marker
         const x = u.valToPos(ev.ts, 'x', true);
         if (x < left || x > left + width) continue;
         const color = EVENT_COLORS[ev.kind] || '#9aa0a6';

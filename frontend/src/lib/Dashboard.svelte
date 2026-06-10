@@ -21,7 +21,14 @@
   let spDirty = $state(false);
   let health = $state({});   // channel -> 'disconnected' | 'fault' | 'ok'
   let fuelInfo = $state({}); // blower-effort fuel assessment from the daemon
+  let guided = $state(null); // active guided cook (null when none)
   let stop;
+  // Next unfired milestone's prompt = "what to expect next" on the strip.
+  const guidedNext = $derived(
+    guided?.milestones?.find((m) => !m.fired)?.prompt || null);
+  async function guidedWrapped() {
+    try { await postJSON('guided/wrapped', {}); } catch (_) {}
+  }
   function fuelHours(s) { const h = s / 3600; return h >= 1 ? `~${h.toFixed(1)}h` : `~${Math.round(s / 60)}m`; }
 
   function apply(d) {
@@ -39,6 +46,7 @@
     if (d.state.pid && d.state.pid.units) unit = d.state.pid.units;
     if (d.state.probe_health) health = d.state.probe_health;
     if (d.state.fuel) fuelInfo = d.state.fuel;
+    guided = d.state.guided ?? guided;
     modeLabel = status.pid_mode_label || '';
     if (!spDirty && typeof status.set_point === 'number') spInput = Math.round(status.set_point);
   }
@@ -277,18 +285,45 @@
   </button>
 {/snippet}
 
+{#snippet guidedStrip()}
+  {#if guided}
+    <div class={'hm-card rounded-2xl px-4 py-3 flex items-center gap-3 ' + (guided.done ? 'border border-green-600/40' : '')}>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-orange-500 shrink-0" aria-hidden="true">
+        <path d="M12 23a7 7 0 0 0 7-7c0-2.1-1-4-2.6-5.5-.2 1.2-1.1 2.1-2.3 2.1.9-2.5.2-5.2-2.3-7.9-.5 2.7-2 3.8-3.6 5.1C6.7 11.4 5 13.5 5 16a7 7 0 0 0 7 7z" />
+      </svg>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold truncate">{guided.label}
+          {#if !guided.done && etas[guided.channel]?.eta_seconds > 0}
+            <span class="opacity-50 font-normal tabular-nums"> · ~done {fmtClock(Date.now() / 1000 + etas[guided.channel].eta_seconds)}</span>
+          {/if}
+        </div>
+        <div class="text-xs opacity-60 truncate">
+          {#if guided.done}Target reached. Rest, then enjoy.{:else if guidedNext}Next: {guidedNext}{/if}
+        </div>
+      </div>
+      {#if guided.wrap_pending}
+        <button class="shrink-0 px-3 py-1.5 rounded-lg bg-orange-600 text-white text-sm font-semibold" onclick={guidedWrapped}>I wrapped it</button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 {#if embedded}
   <!-- Desktop: pit panel on the left, probes stacked vertically beside it. The
        pit card grows (flex-1) to match the probe column height (no gap). -->
-  <div class="grid grid-cols-3 gap-4 items-stretch">
-    <div class="col-span-2 flex flex-col">{@render pit('flex-1')}</div>
-    <div class="flex flex-col gap-3">
-      {#each foods as f, i}{@render probeCard(f, i, 'flex-1 flex flex-col justify-center')}{/each}
+  <div class="space-y-4">
+    {@render guidedStrip()}
+    <div class="grid grid-cols-3 gap-4 items-stretch">
+      <div class="col-span-2 flex flex-col">{@render pit('flex-1')}</div>
+      <div class="flex flex-col gap-3">
+        {#each foods as f, i}{@render probeCard(f, i, 'flex-1 flex flex-col justify-center')}{/each}
+      </div>
     </div>
   </div>
 {:else}
   <!-- Mobile/tablet: pit on top, probes side by side in a row. -->
   <div class="px-4 pt-4 pb-28 space-y-4">
+    {@render guidedStrip()}
     {@render pit()}
     <div class="grid grid-cols-3 gap-3">
       {#each foods as f, i}{@render probeCard(f, i, '')}{/each}

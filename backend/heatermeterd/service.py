@@ -90,6 +90,7 @@ class HeaterMeterService:
         self.profiles_path: Optional[str] = None
         # Latest cached predictions per channel (fed by _check_eta_push).
         self.last_predictions: dict = {}
+        self._pred_logged: dict = {}   # channel -> ts of last timeline forecast
         # Which named preset is configured on each probe (the board only reports
         # type+coeffs, not the preset name), so the UI can show the actual probe.
         self.probe_presets_path: Optional[str] = None
@@ -2083,6 +2084,7 @@ class HeaterMeterService:
             self._cookdone.reset()   # fresh cook-completion tracking per session
             self._probewatch.reset()  # fresh probe-health tracking per cook
             self.probe_health = {}
+            self._pred_logged = {}   # fresh forecast logging per cook
             self._emit({"type": "session_started", "session_id": self.session_id,
                         "ts": ts})
         return self.session_id
@@ -2285,10 +2287,20 @@ class HeaterMeterService:
             eta = p.eta_seconds
             # Cache for the MQTT "Predicted Done" sensor (and anything else that
             # wants the latest prediction without recomputing).
+            done_at = (ts + eta) if eta is not None else None
             self.last_predictions[channel] = {
                 "ts": ts, "eta": eta, "confidence": p.confidence,
-                "done_at": (ts + eta) if eta is not None else None,
+                "done_at": done_at,
             }
+            # Log the forecast to the timeline every ~10 min so the cook report
+            # can show prediction-vs-actual afterwards. These events are data,
+            # not markers: the graph and the report's timeline list skip them.
+            if done_at is not None and p.confidence in ("medium", "high"):
+                last = self._pred_logged.get(channel, 0)
+                if (ts - last) >= 600:
+                    self._pred_logged[channel] = ts
+                    self._record_event(ts, "prediction", channel=channel,
+                                       value=done_at)
             if eta is not None and 0 < eta <= self.ETA_NOTIFY_SEC \
                     and p.confidence in ("low", "medium", "high"):
                 if channel not in self._eta_notified:
