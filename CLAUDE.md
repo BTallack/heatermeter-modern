@@ -7,7 +7,7 @@ every session.
 
 A from-scratch rewrite of the Raspberry Pi software for the **HeaterMeter** BBQ
 temperature controller. The upstream project (cloned at
-`/Users/btallack/Documents/GitHub/HeaterMeter`) is current but its Pi-side stack
+`/Users/btallack/Developer/HeaterMeter`) is current but its Pi-side stack
 is dated: a custom OpenWrt image running a Lua/LuCI daemon, RRDtool, jQuery/Flot,
 and a 2012 Realtek WiFi driver. This project replaces all of that with a modern
 Linux application on standard Raspberry Pi OS.
