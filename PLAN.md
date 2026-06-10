@@ -242,7 +242,7 @@ and a controllable setpoint. No HA YAML needed (discovery handles it).
 
 ## Handoff note (2026-05-31, end of session)
 
-**Deployed + verified live on the Pi** (http://192.168.3.164:8080/, service
+**Deployed + verified live on the Pi** (http://<pi-address>:8080/, service
 active + enabled, 4 probes reading): Phases 1, 2, 2.5, and 3 code. MQTT is built,
 tested, deployed, and dormant (no `--mqtt-host` yet). 52 backend tests green.
 

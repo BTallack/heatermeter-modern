@@ -189,7 +189,7 @@ Three privilege domains, talking through a group-writable spool under the data
 dir (not `/tmp`, because the daemon unit sets `PrivateTmp=true`):
 
 ```
-heatermeterd (user brennan, NoNewPrivileges) -- cannot escalate
+heatermeterd (daemon user, NoNewPrivileges) -- cannot escalate
   | writes data/firmware/spool/request.json, tails <job>.progress.jsonl
   v
 systemd hm-flash.path watches request.json -> starts hm-flash.service (root)
@@ -229,7 +229,7 @@ ls /dev/spidev*                         # absent (SPI off)
 sudo dtoverlay spi0-2cs
 ls -l /dev/spidev0.0                     # present, group spi, 0660
 avrdude -c linuxspi -p m328p -P /dev/spidev0.0:/dev/gpiochip0:25 -B 400kHz
-                                         # must print 0x1e950f (run as brennan, no sudo)
+                                         # must print 0x1e950f (run as the daemon user, no sudo)
 dtoverlay -l                             # note the spi0-2cs index
 sudo dtoverlay -r <index>
 ls /dev/spidev*                          # gone
@@ -243,7 +243,7 @@ stays frozen until reboot.
 
 **Step 0 result: PASS (validated on hardware 2026-06-02).** `dtoverlay spi0-2cs`
 created `/dev/spidev0.0` (group `spi`, 0660); the sig-gate read `0x1e950f` running
-as the unprivileged `brennan` user (no sudo), confirming group access; removal by
+as the unprivileged `<pi-user>` user (no sudo), confirming group access; removal by
 index plus the GPIO25 pulse restored the LCD with the web server up throughout.
 The full updater was then validated end to end: dry-run backup, a real hm3
 re-flash (verify + idempotent restore), a real EEPROM-reset flash to hm1 (the
