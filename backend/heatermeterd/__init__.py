@@ -4,4 +4,4 @@ The board (ATmega328 firmware) is untouched; this package speaks its serial
 protocol (see :mod:`heatermeterd.protocol`) and exposes it over a modern API.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

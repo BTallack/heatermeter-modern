@@ -64,6 +64,7 @@ TEST_MODULES = [
     "test_hostupdate",
     "test_service",
     "test_api",
+    "test_shakedown",
     "test_integration_pty",
 ]
 

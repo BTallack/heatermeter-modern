@@ -54,6 +54,7 @@
     welcomed = localStorage.getItem('hm.welcomed') === '1';
     readPanelStyle();
     window.addEventListener('hm-prefs', readPanelStyle);
+    window.addEventListener('hm-run-wizard', openWizard);
     const mq = window.matchMedia('(min-width: 1024px)');
     const upd = () => {
       isDesktop = mq.matches;

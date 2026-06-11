@@ -419,3 +419,41 @@ def test_boot_result_surfaced_and_acked():
                 os.path.join(svc.hostupdate_spool, "hostupdate.result.json"))
             await svc.stop()
     asyncio.run(scenario())
+
+
+def test_auto_check_pushes_once_per_version():
+    async def scenario():
+        with tempfile.TemporaryDirectory() as tmp:
+            relroot = os.path.join(tmp, "rel"); os.makedirs(relroot)
+            rel, manifest_url, _ = _serve_release(relroot, version="99.9.0")
+            try:
+                svc = _svc(tmp)
+                await svc.start()
+                pushes, events = [], []
+                svc._push = lambda *a, **k: pushes.append(a)
+                orig = svc._emit
+                svc._emit = lambda e: (events.append(e), orig(e))
+
+                # auto_check off: scheduled tick does nothing.
+                svc.save_host_update_config({"manifest_url": manifest_url})
+                svc._hu_auto_check()
+                await asyncio.sleep(0.2)
+                assert pushes == []
+
+                # auto_check on: offered version is pushed + emitted once.
+                svc.save_host_update_config(
+                    {"manifest_url": manifest_url, "auto_check": True})
+                svc._hu_auto_check()
+                await asyncio.sleep(0.3)
+                assert len(pushes) == 1
+                assert any(e.get("type") == "hostupdate_available"
+                           and e.get("version") == "99.9.0" for e in events)
+
+                # A repeat tick for the same version stays silent.
+                svc._hu_auto_check()
+                await asyncio.sleep(0.3)
+                assert len(pushes) == 1
+                await svc.stop()
+            finally:
+                rel.stop()
+    asyncio.run(scenario())

@@ -22,6 +22,25 @@
   let health = $state({});   // channel -> 'disconnected' | 'fault' | 'ok'
   let fuelInfo = $state({}); // blower-effort fuel assessment from the daemon
   let guided = $state(null); // active guided cook (null when none)
+
+  // Keep the screen awake while the cooker is actively running (startup,
+  // recovering, or at temp). The Wake Lock API only exists in a secure
+  // context (HTTPS), so over plain HTTP this is a silent no-op.
+  let wakeLock = null;
+  async function syncWakeLock() {
+    const cooking = [0, 1, 2].includes(status.pid_mode);
+    if (cooking && !wakeLock && navigator.wakeLock
+        && document.visibilityState === 'visible') {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => (wakeLock = null));
+      } catch (_) { wakeLock = null; }
+    } else if (!cooking && wakeLock) {
+      try { wakeLock.release(); } catch (_) {}
+      wakeLock = null;
+    }
+  }
+  function onVisibility() { syncWakeLock(); }
   let stop;
   // Next unfired milestone's prompt = "what to expect next" on the strip.
   const guidedNext = $derived(
@@ -48,12 +67,14 @@
     if (d.state.fuel) fuelInfo = d.state.fuel;
     guided = d.state.guided ?? guided;
     modeLabel = status.pid_mode_label || '';
+    syncWakeLock();
     if (!spDirty && typeof status.set_point === 'number') spInput = Math.round(status.set_point);
   }
 
   onMount(async () => {
     readPrefs();
     window.addEventListener('hm-prefs', readPrefs);
+    document.addEventListener('visibilitychange', onVisibility);
     try { apply({ state: await getJSON('status') }); } catch (_) {}
     try { meat = (await getJSON('presets')).meat || []; } catch (_) {}
     refreshEtas();
@@ -68,7 +89,7 @@
       }
     });
   });
-  onDestroy(() => { stop && stop(); clearInterval(etaTimer); window.removeEventListener('hm-prefs', readPrefs); });
+  onDestroy(() => { stop && stop(); clearInterval(etaTimer); window.removeEventListener('hm-prefs', readPrefs); document.removeEventListener('visibilitychange', onVisibility); if (wakeLock) { try { wakeLock.release(); } catch (_) {} } });
 
   const fmt = (v) => (v == null || Number.isNaN(v)) ? '--' : Math.round(v);
   function bump(n) { spInput = Math.max(0, (parseInt(spInput, 10) || 0) + n); spDirty = true; }

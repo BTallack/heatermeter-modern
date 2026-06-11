@@ -1379,8 +1379,10 @@
       <div class="flex justify-between"><span class="opacity-60">App version</span><span class="nums font-semibold">{status?.app_version ?? '—'}</span></div>
       <div class="flex justify-between"><span class="opacity-60">Board firmware</span><span class="nums font-semibold">{status?.version ?? '—'}</span></div>
       <div class="flex justify-between"><span class="opacity-60">Device</span><span class="font-semibold">{status?.device_name ?? 'HeaterMeter'}</span></div>
-      <div class="pt-2 border-t border-black/10 dark:border-white/10">
-        <a class="text-orange-600 underline" href="/classic">Open classic interface</a>
+      <div class="pt-2 border-t border-black/10 dark:border-white/10 space-y-2">
+        <button class="px-3 py-2 rounded-lg bg-neutral-700 text-white text-sm w-full"
+                onclick={() => window.dispatchEvent(new Event('hm-run-wizard'))}>Run first-time setup again</button>
+        <a class="text-orange-600 underline text-sm" href="https://github.com/BTallack/heatermeter-modern" target="_blank" rel="noopener">Project on GitHub</a>
       </div>
     </div>
   </details>

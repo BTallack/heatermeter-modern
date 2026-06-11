@@ -81,6 +81,8 @@ class HeaterMeterService:
         # Auto timeline events: edge-detector state for lid + setpoint markers.
         self._lid_open_prev = False
         self._setpoint_prev: Optional[float] = None
+        # True once the current session's cook completed (resets per session).
+        self._session_completed = False
         # Active guided cook (one at a time). See guided.py.
         self.guided: Optional[GuidedRun] = None
         self._guided_keep_warm = False
@@ -144,6 +146,7 @@ class HeaterMeterService:
         self.hostupdate_status: dict = {"state": "idle"}
         self._hu_available: Optional[dict] = None         # cached last check
         self._hu_last_check = 0.0
+        self._hu_notified_version: Optional[str] = None   # auto-check push dedupe
         self._hu_progress_consumed = 0
         self._hu_started_ts = 0.0
         self._hu_poll_interval = 0.5
@@ -184,6 +187,9 @@ class HeaterMeterService:
         self.loop.call_later(15.0, self._dark_watchdog)
         # Daily storage maintenance (prune/downsample old samples per config).
         self.loop.call_later(3600.0, self._db_maintenance)
+        # Background software-update check (no-op unless auto_check is enabled):
+        # first pass shortly after boot, then daily.
+        self.loop.call_later(600.0, self._hu_auto_check)
         # If we were just restarted by a host-update, surface its outcome so the
         # UI can show "Updated to vX" / the error once it reconnects.
         self._load_hostupdate_boot_result()
@@ -530,6 +536,10 @@ class HeaterMeterService:
 
         targets = {"pit": False, "food1": _has_target(3),
                    "food2": _has_target(5), "ambient": _has_target(7)}
+        # Once the cook is complete, pulling probes is expected: drop the
+        # food-target severity so it logs as info instead of pushing a warning.
+        if self._session_completed:
+            targets = {k: False for k in targets}
         for ev in self._probewatch.update(
                 ts, temps, pid_mode=sd.get("pid_mode"), targets=targets):
             self._on_probe_event(ev)
@@ -979,6 +989,7 @@ class HeaterMeterService:
             self.store.mark_completed(session_id, done_at, reason)
         except Exception:
             pass
+        self._session_completed = True
         self._emit({"type": "cook_complete", "session_id": session_id,
                     "ts": done_at, "reason": reason})
         self._record_event(done_at, "cook_complete",
@@ -1410,6 +1421,32 @@ class HeaterMeterService:
     def _hu_configured(self) -> bool:
         return bool(self.hostupdate_spool
                     and self.get_host_update_config()["manifest_url"])
+
+    def _hu_auto_check(self) -> None:
+        """Daily background update check, active only when the user enabled
+        auto_check on the channel. A newly offered version is pushed once."""
+        if self.loop is not None:
+            self.loop.call_later(24 * 3600, self._hu_auto_check)
+        cfg = self.get_host_update_config()
+        if not (cfg.get("auto_check") and cfg.get("manifest_url")):
+            return
+
+        async def _run():
+            r = await self.check_host_update()
+            if not (r.get("ok") and r.get("update_available")):
+                return
+            v = r.get("version")
+            if not v or v == self._hu_notified_version:
+                return
+            self._hu_notified_version = v
+            self._emit({"type": "hostupdate_available", "version": v,
+                        "changelog": r.get("changelog", "")})
+            self._push("HeaterMeter update available",
+                       f"Version {v} is ready to install from Settings, "
+                       "Software Update.", tags="arrow_up")
+
+        if self.loop is not None:
+            self.loop.create_task(_run())
 
     def host_update_listing(self) -> dict:
         """The data the Host Software card needs: running version, whether a
@@ -2085,6 +2122,7 @@ class HeaterMeterService:
             self._probewatch.reset()  # fresh probe-health tracking per cook
             self.probe_health = {}
             self._pred_logged = {}   # fresh forecast logging per cook
+            self._session_completed = False
             self._emit({"type": "session_started", "session_id": self.session_id,
                         "ts": ts})
         return self.session_id

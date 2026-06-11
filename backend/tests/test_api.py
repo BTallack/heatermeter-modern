@@ -43,9 +43,10 @@ def test_api_end_to_end():
         # The app's own HTML/JS/CSS must be no-cache so a redeploy is picked up.
         assert "no-cache" in index.headers.get("cache-control", "")
 
-        appjs = c.get("/app.js")
-        assert "uPlot" in appjs.text
-        assert "no-cache" in appjs.headers.get("cache-control", "")
+        # Share-page assets (the classic dashboard itself was retired).
+        css = c.get("/style.css")
+        assert css.status_code == 200
+        assert "no-cache" in css.headers.get("cache-control", "")
         # Vendored, versioned assets may cache hard.
         vend = c.get("/vendor/uPlot.iife.min.js")
         assert vend.status_code == 200

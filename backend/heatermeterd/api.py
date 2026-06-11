@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -1103,10 +1103,13 @@ def create_app(service) -> FastAPI:
     if os.path.isdir(svelte_dir):
         app.mount("/app", StaticFiles(directory=svelte_dir, html=True), name="svelte")
 
+    # backend/static now holds only the public share page and its assets
+    # (share.html, style.css, /vendor/uPlot); the classic dashboard was retired
+    # once the Svelte app reached full parity.
     static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
     have_svelte = os.path.isdir(svelte_dir)
-    have_classic = os.path.isdir(static_dir)
-    if have_svelte or have_classic:
+    have_static = os.path.isdir(static_dir)
+    if have_svelte or have_static:
         NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
         IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
@@ -1118,23 +1121,17 @@ def create_app(service) -> FastAPI:
                 return None
             return target if os.path.isfile(target) else None
 
-        @app.get("/")
-        async def index():
-            # Primary UI: the Svelte/Konsta app. The classic no-build dashboard
-            # is kept at /classic as a fallback (and still backs /share).
-            root = svelte_dir if have_svelte else static_dir
-            return FileResponse(os.path.join(root, "index.html"), headers=NO_CACHE)
-
-        if have_classic:
-            @app.get("/classic")
-            async def classic_index():
-                return FileResponse(os.path.join(static_dir, "index.html"),
+        if have_svelte:
+            @app.get("/")
+            async def index():
+                return FileResponse(os.path.join(svelte_dir, "index.html"),
                                     headers=NO_CACHE)
 
+        if have_static:
             @app.get("/share/{token}")
             async def share_page(token: str):
-                # Public read-only cook page (classic). The token is read
-                # client-side; the page fetches /api/share/{token} for data.
+                # Public read-only cook page. The token is read client-side;
+                # the page fetches /api/share/{token} for data.
                 share_html = os.path.join(static_dir, "share.html")
                 if os.path.isfile(share_html):
                     return FileResponse(share_html, headers=NO_CACHE)
@@ -1143,13 +1140,12 @@ def create_app(service) -> FastAPI:
         @app.get("/{path:path}")
         async def static_file(path: str):
             # Serve assets from the Svelte build first (content-hashed under
-            # /assets/), then fall back to the classic static tree (app.js,
-            # style.css, /vendor/*, icon, manifest - used by /classic and
-            # /share). Both lookups are traversal-guarded.
+            # /assets/), then fall back to the share-page assets (style.css,
+            # /vendor/*). Both lookups are traversal-guarded.
             bases = []
             if have_svelte:
                 bases.append(svelte_dir)
-            if have_classic:
+            if have_static:
                 bases.append(static_dir)
             for base in bases:
                 target = _safe_file(base, path)

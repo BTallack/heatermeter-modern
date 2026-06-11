@@ -6,8 +6,9 @@ standard Raspberry Pi OS application (Python + FastAPI backend, live uPlot
 dashboard) while talking to the **unmodified** ATmega328 board over its existing
 serial protocol.
 
-See [PLAN.md](PLAN.md) for the roadmap and [PROTOCOL.md](PROTOCOL.md) for the
-board contract.
+See [ROADMAP.md](ROADMAP.md) for where this is headed, [PROTOCOL.md](PROTOCOL.md)
+for the board contract, and [docs/HOME-ASSISTANT.md](docs/HOME-ASSISTANT.md) for
+the Home Assistant automation cookbook.
 
 ## Layout
 
@@ -15,8 +16,7 @@ board contract.
 backend/
   heatermeterd/      the package: protocol, serial_io, links, store, state,
                      service, api, main
-  static/            the classic no-build dashboard (uPlot vendored locally),
-                     now served at /classic as a fallback
+  static/            the public /share cook page + its assets (uPlot vendored)
   tools/             dev tools: simulator, monitor/capture, sender, replay
   tests/             unit + integration tests
   run_tests.py       dependency-free test runner (pytest also works)
@@ -26,25 +26,19 @@ deploy/              systemd unit + Raspberry Pi setup notes
 
 ## Web UI
 
-Two UIs are served by the same daemon, fully self-contained (no CDN / internet
-dependency at runtime):
+One self-contained UI (no CDN / internet dependency at runtime): a Svelte +
+Konsta app served at `/` - mobile-first with a bottom tab bar on phones,
+popup or slide-out panels on desktop, light/dark/auto theme. Public
+`/share/<token>` cook pages are served read-only without authentication.
 
-| Path | UI |
-|---|---|
-| `/` | **Primary** - Svelte + Konsta app (mobile-first, bottom tab bar on phones, a sidebar on desktop, light/dark/auto theme). Built from `frontend/`. |
-| `/classic` | Legacy no-build dashboard. Kept as a fallback; also backs the public `/share/<token>` cook pages. |
-
-The Svelte app is a build-time artifact - `npm` runs only on a dev machine, and
-the daemon just serves the compiled static files in `frontend/dist/`:
+The app is a build-time artifact - `npm` runs only on a dev machine, and the
+daemon just serves the compiled static files in `frontend/dist/`:
 
 ```bash
 cd frontend
 npm install      # one time, on a machine with internet
-npm run build    # emits frontend/dist/ (committed/deployed alongside the backend)
+npm run build    # emits frontend/dist/ (deployed alongside the backend)
 ```
-
-If `frontend/dist/` is absent, the daemon falls back to serving the classic
-dashboard at `/`.
 
 ## Run the dashboard with no hardware
 
@@ -72,21 +66,36 @@ python3 run_tests.py        # pure suite, no dependencies required
 
 ## Features
 
-- Live multi-probe uPlot dashboard with **fan % / servo %** overlaid on a second
-  axis, setpoint control, and manual fan override.
-- A full Settings screen: probe naming + Steinhart-Hart type presets, calibration
-  offsets, temperature alarms, PID tuning + presets + **relay auto-tune**,
-  blower/servo tuning, lid detection, LCD/LED config, plus appearance (theme) and
-  an About panel (app + board firmware versions).
-- **Cook intelligence:** named sessions (auto start/close), stall-aware
-  time-to-done prediction, ~27 meat/doneness presets, multi-stage cook programs
-  (incl. keep-warm / auto-shutdown), session compare overlay.
-- **Timeline notes** with optional **photos** (downscaled client-side), shown
-  below the chart and as chart markers.
-- **Home Assistant** via MQTT auto-discovery and **away-from-home push** via ntfy
-  - both configured in Settings, no files to edit. Alert tuning: debounce, repeat
-  interval, and a "device went dark" failsafe if the board stops reporting.
-- Public shareable cook links, CSV export, installable PWA.
+- **Guided Cooks:** pick what you're cooking (brisket, pork butt, ribs, ...) and
+  the pit is set, the probe named and targeted, and you're coached through every
+  milestone - the stall, the wrap (with an "I wrapped it" confirm), the pull,
+  and the rest - in the app, by push, and on the LCD. Optional auto keep-warm
+  the moment the food hits its target.
+- **Cook intelligence:** stall-aware time-to-done predictions with a done-by
+  clock, automatic stall detection, charcoal/fuel monitoring with an "add fuel"
+  alert from blower effort, probe-dropout/fault alerts, and Meater-style
+  automatic cook completion when the probe is pulled.
+- **Sessions, timeline, and reports:** every cook is a named session with an
+  auto-annotated timeline (lid events, setpoint changes, stall, wrap, target),
+  notes with photos, a printable per-cook report with prediction accuracy,
+  one-click "repeat this cook", and CSV export. Public shareable cook links.
+- Live multi-probe uPlot dashboard with fan/servo overlay, setpoint control,
+  manual fan override, meat/doneness presets, multi-stage cook programs
+  (incl. keep-warm / auto-shutdown), session compare overlay, kitchen timers.
+- A full tabbed Settings screen: probe types (incl. K-type thermocouple) and
+  calibration, alarms, PID tuning + relay auto-tune, **cooker profiles**
+  (save/switch tunings per grill), blower/servo, lid detection, LCD/LEDs +
+  display messages, storage retention, backup/restore, optional password
+  protection, and a first-run setup wizard.
+- **Home Assistant** via MQTT auto-discovery - temperatures, setpoint and food
+  targets (writable), lid, stall, fuel-low, and predicted-done entities; see the
+  [automation cookbook](docs/HOME-ASSISTANT.md). **Away-from-home push** via
+  ntfy with debounce, repeat, and a "device went dark" failsafe.
+- **In-app updates, both layers:** flash the board firmware from Settings
+  (SHA-256 verified, auto-backup, one-click rollback) and update the host app
+  itself from a GitHub release channel (verified, health-checked,
+  auto-rolled-back on failure). Nightly local backups via systemd timer.
+- Optional HTTPS (enables PWA install + screen wake-lock during cooks).
 
 ## On the Raspberry Pi
 
@@ -98,6 +107,8 @@ python3 run_tests.py        # pure suite, no dependencies required
    bash deploy/install.sh
    # open http://<pi-address>:8080/
    ```
+   The installer also sets up the in-app firmware updater, the host
+   self-updater, system power helpers, and the nightly backup timer.
    Override defaults with env vars, e.g.
    `SERIAL=/dev/ttyAMA0 PORT=8080 bash deploy/install.sh`. Or install by hand:
    ```bash
