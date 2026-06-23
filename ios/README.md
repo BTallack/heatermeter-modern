@@ -1,69 +1,67 @@
-# HeaterMeter iOS app (starting point)
+# HeaterMeter iOS app
 
-A native SwiftUI client for the HeaterMeter daemon. The daemon already exposes
-everything over REST + WebSocket (`/api/*`, `/api/ws`), so this app is purely a
-*client* — no backend rewrite. These files are a scaffold, not a full Xcode
-project: drop them into a new iOS App target (iOS 17+) and build out from there.
+A native SwiftUI control app for the HeaterMeter daemon — a second client of the
+same REST + WebSocket API the web UI uses, so there's no backend to change. It
+covers the four screens: live **Dashboard** (pit hero, setpoint, probe targets
++ ETAs, manual fan, lid), **Graph** (Swift Charts), **Cook** (sessions, stats,
+programs), and **Settings** (probes, PID + auto-tune, smart lid recovery, units,
+integration status). Push / Live Activity is not wired yet (the daemon side
+exists in `backend/heatermeterd/apns.py`).
 
-## What's here
+## Open and run
+
+The Xcode project is generated from `project.yml` (so it never drifts), not
+committed.
+
+```sh
+brew install xcodegen        # one time
+cd ios
+xcodegen generate            # writes HeaterMeter.xcodeproj
+open HeaterMeter.xcodeproj
+```
+
+In Xcode: select the **HeaterMeter** target → Signing & Capabilities → set your
+Team (a free Apple ID works for running on your own device), then Run. iOS 17+.
+
+On first launch the app asks for your HeaterMeter's address (e.g.
+`192.168.3.164:8080`) and validates it before saving. Leave the password blank
+unless you turned on the daemon's optional auth.
+
+## Files
 
 | File | Role |
 |------|------|
-| `HeaterMeter/Models.swift` | `Codable` models mirroring the daemon JSON (`/api/status`, the WS envelope, predictions, sessions, push status). Includes `LenientDouble` for the board's string-typed numeric config fields. |
-| `HeaterMeter/HeaterMeterClient.swift` | `@Observable` client: REST control (setpoint, manual fan, lid, predict, sessions, push register) + a reconnecting WebSocket live feed that updates `state`. |
-| `HeaterMeter/DashboardView.swift` | A compact dashboard (pit hero + setpoint stepper + probe tiles) driven by the client. Mirrors the web `Dashboard.svelte`. |
+| `project.yml` | XcodeGen spec: iOS 17 app target, bundle id, ATS local-networking exception, Bonjour keys. |
+| `HeaterMeter/HeaterMeterApp.swift` | `@main`; gates on a configured connection, then the four-tab app. |
+| `HeaterMeter/Connection.swift` | Persists host + token; onboarding screen. |
+| `HeaterMeter/HeaterMeterClient.swift` | `@Observable` client: REST control + data, reconnecting WebSocket live feed. |
+| `HeaterMeter/Models.swift` | Codable models mirroring the API (incl. lenient decoding for the board's string-typed numerics). |
+| `HeaterMeter/DashboardView.swift` | Pit hero, setpoint, probe tiles + targets/ETAs, manual fan, lid, probe editor. |
+| `HeaterMeter/GraphView.swift` | Swift Charts temperature graph with range picker + target lines. |
+| `HeaterMeter/CookView.swift` | Sessions list + per-cook stats, finish cook, start a program. |
+| `HeaterMeter/SettingsView.swift` | Probes, PID + auto-tune, smart lid recovery, unit, integrations, disconnect. |
 
-Graph (Swift Charts), Cook, and Settings screens follow the same pattern against
-the same client.
+## Connectivity notes
 
-## Wiring it up
+- **Plain HTTP on the LAN** is allowed via `NSAllowsLocalNetworking` (set in
+  `project.yml`). On home Wi-Fi the app talks directly to the Pi.
+- **Away from home**: point the host at a Tailscale address or a reverse proxy.
+  If that host isn't a private-LAN address you may need a per-domain ATS
+  exception or TLS (the daemon has an HTTPS option).
+- **Discovery**: the project ships the Bonjour keys; auto-discovery (`NWBrowser`
+  for `_http._tcp`) is a natural next addition — for now you enter the host once.
 
-```swift
-@main
-struct HeaterMeterApp: App {
-    @State private var client = HeaterMeterClient(
-        baseURL: URL(string: "http://192.168.3.164:8080")!)
-    var body: some Scene {
-        WindowGroup { NavigationStack { DashboardView(client: client) } }
-    }
-}
-```
+## Not built yet (daemon side is ready)
 
-## Things to handle before it works on-device
+- **APNs push + Live Activity / Dynamic Island.** Register the device token via
+  `client.registerPush(deviceToken:)`, install `heatermeterd[ios]` on the Pi,
+  and configure APNs creds (`POST /api/push`). The Live Activity content-state
+  matches `apns.liveactivity_content_state(...)`.
+- **Probe-type picker, MQTT/notify editing** — currently configured from the web
+  UI; the app shows integration status read-only.
 
-- **App Transport Security.** The Pi serves plain HTTP on the LAN; `URLSession`
-  blocks that by default. Either add an ATS exception for the host in
-  `Info.plist`, or front the daemon with TLS (the backend has an HTTPS option)
-  and/or reach it over a Tailscale hostname.
-- **Finding the box.** Hard-code the URL to start; add Bonjour/`NWBrowser`
-  discovery so the app finds the HeaterMeter on the LAN, plus a manual host field
-  and a stored "away" URL (Tailscale / reverse proxy).
-- **Auth.** If the daemon's optional password auth is on, log in via
-  `POST /api/login`, stash the bearer token in `authToken` (Keychain), and the
-  client sends it on REST and as the WS `?token=`.
+## Verifying without full Xcode
 
-## Push notifications (away-from-home alerts + Live Activity)
-
-The daemon side already exists (`backend/heatermeterd/apns.py`,
-`POST /api/push/*`). To light it up:
-
-1. In the app, register for remote notifications; on the granted device token
-   call `client.registerPush(deviceToken:)` → the daemon stores it.
-2. On the Pi, install the sender deps (`pip install "heatermeterd[ios]"` —
-   `cryptography` + `httpx[http2]`) and configure APNs credentials via
-   `POST /api/push` (Team ID, Key ID, `.p8` path, bundle id, sandbox flag for
-   debug builds).
-3. Existing daemon alerts (`_push`) then fan out to every registered device via
-   APNs alongside ntfy — stall, lid, fuel-low, "almost done", etc.
-4. **Live Activity / Dynamic Island** is the premium step: define an
-   `ActivityAttributes` whose `ContentState` matches
-   `apns.liveactivity_content_state(...)` (pit/setpoint/foods/fan/ETA), start it
-   when a cook begins, and have the daemon post `liveactivity_payload(...)`
-   updates to the per-activity push token (the `apns-topic` gets the
-   `.push-type.liveactivity` suffix, already handled by `apns.apns_topic`).
-
-## Distribution
-
-No App Store needed for personal use: a free Apple ID sideloads to your own
-device (re-sign weekly), or a paid developer account ($99/yr) gets TestFlight —
-handy if you want others running HeaterMeter to install it.
+`Models.swift` type-checks against the macOS SDK and every file parses cleanly
+with the Command Line Tools. The SwiftUI views need full Xcode to type-check
+(their `@Observable`/`@State` macros ship with Xcode, not the CLT).

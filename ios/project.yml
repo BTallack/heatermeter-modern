@@ -1,0 +1,46 @@
+# XcodeGen spec for the HeaterMeter iOS app.
+#
+#   brew install xcodegen          # one time
+#   cd ios && xcodegen generate    # writes HeaterMeter.xcodeproj
+#   open HeaterMeter.xcodeproj     # set your signing Team, then Run
+#
+# The .xcodeproj is generated (not committed) so it never drifts from this file.
+name: HeaterMeter
+options:
+  bundleIdPrefix: dev.tallack
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.5.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+targets:
+  HeaterMeter:
+    type: application
+    platform: iOS
+    sources:
+      - path: HeaterMeter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tallack.heatermeter
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: HeaterMeter/Info.plist
+      properties:
+        CFBundleDisplayName: HeaterMeter
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        ITSAppUsesNonExemptEncryption: false
+        # The Pi serves plain HTTP on the LAN; allow local-network HTTP without
+        # disabling ATS globally. (For a Tailscale/hostname or remote setup, use
+        # HTTPS or add a per-domain ATS exception instead.)
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Ready for optional Bonjour discovery of the daemon on the LAN.
+        NSLocalNetworkUsageDescription: "Find your HeaterMeter on the local network."
+        NSBonjourServices:
+          - _http._tcp
