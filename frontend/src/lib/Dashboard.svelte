@@ -352,9 +352,11 @@
   </div>
 {/if}
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') { probeOpen = false; manualOpen = false; } }} />
+
 {#if probeOpen}
-  <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="presentation" onclick={() => (probeOpen = false)}>
-    <div class="hm-card rounded-2xl w-full max-w-sm p-4 space-y-3" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) probeOpen = false; }}>
+    <div class="hm-card rounded-2xl w-full max-w-sm p-4 space-y-3" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between">
         <h3 class="font-bold text-lg">{foods[probeI]?.label} target</h3>
         <button class="text-2xl leading-none px-2 opacity-60 hover:opacity-100" onclick={() => (probeOpen = false)} aria-label="Close">✕</button>
@@ -362,8 +364,8 @@
       <div class="text-sm opacity-60 tabular-nums">Current: {fmt(foods[probeI]?.val)}°</div>
 
       <div>
-        <label class="block text-xs font-semibold opacity-60 mb-1">Preset</label>
-        <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={pPreset} onchange={onPresetPick}>
+        <label for="probe-preset" class="block text-xs font-semibold opacity-60 mb-1">Preset</label>
+        <select id="probe-preset" class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={pPreset} onchange={onPresetPick}>
           <option value="">Choose a preset…</option>
           {#each meatCats as c}
             <optgroup label={c}>
@@ -377,12 +379,12 @@
 
       <div class="flex gap-2">
         <div class="flex-1 min-w-0">
-          <label class="block text-xs font-semibold opacity-60 mb-1">Probe name</label>
-          <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" maxlength="22" bind:value={pName} />
+          <label for="probe-name" class="block text-xs font-semibold opacity-60 mb-1">Probe name</label>
+          <input id="probe-name" class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" maxlength="22" bind:value={pName} />
         </div>
         <div class="w-24">
-          <label class="block text-xs font-semibold opacity-60 mb-1">Target °</label>
-          <input class="w-full text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 tabular-nums" type="number" bind:value={pTarget} />
+          <label for="probe-target" class="block text-xs font-semibold opacity-60 mb-1">Target °</label>
+          <input id="probe-target" class="w-full text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 tabular-nums" type="number" bind:value={pTarget} />
         </div>
       </div>
 
@@ -398,8 +400,8 @@
 {/if}
 
 {#if manualOpen}
-  <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="presentation" onclick={() => (manualOpen = false)}>
-    <div class="hm-card rounded-2xl w-full max-w-xs p-4 space-y-3" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) manualOpen = false; }}>
+    <div class="hm-card rounded-2xl w-full max-w-xs p-4 space-y-3" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between">
         <h3 class="font-bold text-lg">Manual fan override</h3>
         <button class="text-2xl leading-none px-2 opacity-60 hover:opacity-100" onclick={() => (manualOpen = false)} aria-label="Close">✕</button>

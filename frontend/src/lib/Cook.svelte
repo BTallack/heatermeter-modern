@@ -541,6 +541,5 @@
      so every form control on the Cook screen lines up. The small ✕ / Run /
      Edit list buttons are unaffected. */
   select,
-  input[type="text"],
   input[type="number"] { height: 2.5rem; }
 </style>

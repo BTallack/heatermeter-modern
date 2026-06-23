@@ -747,16 +747,18 @@
         {#each [0, 1, 2, 3] as i}
           <div class="grid grid-cols-[1fr_auto] gap-2 items-end">
             <div>
-              <label class="block text-xs font-semibold opacity-60 mb-1">Probe {i + 1} name</label>
+              <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1">Probe {i + 1} name</span>
               <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" maxlength="22" bind:value={names[i]} placeholder={i === 0 ? 'Pit' : 'Food ' + i} />
+              </label>
             </div>
             <div>
-              <label class="block text-xs font-semibold opacity-60 mb-1">Offset °</label>
+              <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1">Offset °</span>
               <input class="w-20 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" step="0.1" bind:value={offsets[i]} />
+              </label>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-semibold opacity-60 mb-1">Change probe {i + 1} type</label>
+            <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1">Change probe {i + 1} type</span>
             <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={probeType[i]} onchange={() => changeProbeType(i)}>
               <option value="">Current: {currentTypeLabel(i)} (keep)</option>
               {#each Object.entries(probePresets) as [key, p]}
@@ -764,6 +766,7 @@
               {/each}
               <option value="__off">Disable this probe</option>
             </select>
+            </label>
           </div>
         {/each}
       </div>
@@ -780,12 +783,14 @@
         <div class="grid grid-cols-[1fr_1fr_1fr] gap-2 items-end">
           <div class="text-sm font-semibold self-center">{names[i] || (i === 0 ? 'Pit' : 'Probe ' + (i + 1))}</div>
           <div>
-            <label class="block text-xs opacity-60 mb-1">Low °</label>
+            <label class="block"><span class="block text-xs opacity-60 mb-1">Low °</span>
             <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={alarms[i * 2]} />
+            </label>
           </div>
           <div>
-            <label class="block text-xs opacity-60 mb-1">High °</label>
+            <label class="block"><span class="block text-xs opacity-60 mb-1">High °</span>
             <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={alarms[i * 2 + 1]} />
+            </label>
           </div>
         </div>
       {/each}
@@ -800,8 +805,9 @@
       <p class="text-xs opacity-60">Warn when a probe that was reading suddenly disconnects or reads something impossible, so a yanked or failed probe never silently ends a cook. A pit-probe dropout mid-cook is sent as a high-priority alert.</p>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={pw.enabled} /> Alert on probe disconnect / sensor fault</label>
       <div>
-        <label class="block text-xs opacity-60 mb-1">Disconnect confirmation (seconds)</label>
+        <label class="block"><span class="block text-xs opacity-60 mb-1">Disconnect confirmation (seconds)</span>
         <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" min="2" max="120" bind:value={pw.dropout_secs} />
+        </label>
         <p class="text-xs opacity-50 mt-1">How long a probe must read nothing before it counts as disconnected (filters brief glitches).</p>
       </div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={pw.stall_enabled} /> Detect the stall (heads-up when a food probe plateaus, and when it breaks out)</label>
@@ -856,11 +862,12 @@
     <summary class="cursor-pointer select-none px-4 py-3 font-bold">PID Tuning</summary>
     <div class="px-4 pb-4 space-y-3">
       <div>
-        <label class="block text-xs font-semibold opacity-60 mb-1">Preset</label>
+        <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1">Preset</span>
         <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={pidPresetSel} onchange={applyPidPreset}>
           <option value="">Custom</option>
           {#each pidPresets as pp}<option value={pp.key}>{pp.label}</option>{/each}
         </select>
+        </label>
         {#if pidPresetSel}
           <p class="text-xs opacity-60 mt-1">{pidPresets.find((x) => x.key === pidPresetSel)?.note}</p>
         {/if}
@@ -868,8 +875,9 @@
       <div class="grid grid-cols-4 gap-2">
         {#each ['b', 'p', 'i', 'd'] as k}
           <div>
-            <label class="block text-xs font-semibold opacity-60 mb-1 uppercase">{k}</label>
+            <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1 uppercase">{k}</span>
             <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" step="0.001" bind:value={pid[k]} oninput={() => (pidPresetSel = '')} />
+            </label>
           </div>
         {/each}
       </div>
@@ -901,16 +909,18 @@
         <p class="text-xs opacity-60">Runs a relay-feedback test on the pit to derive P/I/D automatically. The cooker must be lit and stable.</p>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-xs opacity-60 mb-1">Setpoint °</label>
+            <label class="block"><span class="block text-xs opacity-60 mb-1">Setpoint °</span>
             <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={tune.setpoint} />
+            </label>
           </div>
           <div>
-            <label class="block text-xs opacity-60 mb-1">Rule</label>
+            <label class="block"><span class="block text-xs opacity-60 mb-1">Rule</span>
             <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={tune.rule}>
               <option value="tyreus_luyben">Tyreus-Luyben (gentle)</option>
               <option value="ziegler_nichols">Ziegler-Nichols (aggressive)</option>
               <option value="no_overshoot">No overshoot (conservative)</option>
             </select>
+            </label>
           </div>
         </div>
         {#if tuneStatus && tuneStatus.phase && tuneStatus.phase !== 'idle'}
@@ -940,21 +950,22 @@
     <summary class="cursor-pointer select-none px-4 py-3 font-bold">Blower &amp; Servo</summary>
     <div class="px-4 pb-4 space-y-3">
       <div>
-        <label class="block text-xs font-semibold opacity-60 mb-1">Blower preset</label>
+        <label class="block"><span class="block text-xs font-semibold opacity-60 mb-1">Blower preset</span>
         <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={blowerSel} onchange={applyBlowerPreset}>
           <option value="">Custom</option>
           {#each blowerPresets as bp}<option value={bp.key}>{bp.label}</option>{/each}
         </select>
+        </label>
         {#if blowerSel}<p class="text-xs opacity-60 mt-1">{blowerPresets.find((x) => x.key === blowerSel)?.note}</p>{/if}
       </div>
       <div class="grid grid-cols-2 gap-2">
-        <div><label class="block text-xs opacity-60 mb-1">Fan low %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_low} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Fan high %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_high} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Max startup %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.max_startup} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Fan active floor %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_active_floor} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Servo min (10µs)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_min} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Servo max (10µs)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_max} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Servo active ceil %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_active_ceil} /></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Fan low %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_low} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Fan high %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_high} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Max startup %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.max_startup} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Fan active floor %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.fan_active_floor} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Servo min (10µs)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_min} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Servo max (10µs)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_max} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Servo active ceil %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={fan.servo_active_ceil} /></label></div>
       </div>
       <div class="flex gap-4 text-sm">
         <label class="flex items-center gap-2"><input type="checkbox" bind:checked={fan.invert_fan} /> Invert fan</label>
@@ -970,8 +981,8 @@
     <div class="px-4 pb-4 space-y-3">
       <p class="text-xs opacity-60">Pauses the fan when a sudden temp drop suggests the lid was opened.</p>
       <div class="grid grid-cols-2 gap-2">
-        <div><label class="block text-xs opacity-60 mb-1">Trigger drop %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={lid.offset_percent} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Max duration (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={lid.duration_seconds} /></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Trigger drop %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={lid.offset_percent} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Max duration (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={lid.duration_seconds} /></label></div>
       </div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={lid.active} /> Lid detection enabled</label>
       <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLid}>Save Lid Detection</button>
@@ -983,10 +994,10 @@
         </div>
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={lidRec.enabled} /> Resume early when the pit recovers</label>
         <div class="grid grid-cols-2 gap-2" class:opacity-50={!lidRec.enabled}>
-          <div><label class="block text-xs opacity-60 mb-1">Recovery rise (°)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.recover_delta} /></div>
-          <div><label class="block text-xs opacity-60 mb-1">Start fan %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.start_pct} /></div>
-          <div><label class="block text-xs opacity-60 mb-1">Ramp to full (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.ramp_secs} /></div>
-          <div><label class="block text-xs opacity-60 mb-1">Settle delay (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.min_armed_secs} /></div>
+          <div><label class="block"><span class="block text-xs opacity-60 mb-1">Recovery rise (°)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.recover_delta} /></label></div>
+          <div><label class="block"><span class="block text-xs opacity-60 mb-1">Start fan %</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.start_pct} /></label></div>
+          <div><label class="block"><span class="block text-xs opacity-60 mb-1">Ramp to full (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.ramp_secs} /></label></div>
+          <div><label class="block"><span class="block text-xs opacity-60 mb-1">Settle delay (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.min_armed_secs} /></label></div>
         </div>
         <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLidRecovery}>Save Smart Recovery</button>
       </div>
@@ -1001,22 +1012,25 @@
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={cd.enabled} /> Auto-complete cooks when the probe is removed</label>
       <div class="grid grid-cols-2 gap-2">
         <div>
-          <label class="block text-xs opacity-60 mb-1">Confirmation delay (min)</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Confirmation delay (min)</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" min="1" max="30" bind:value={cdMins} />
+          </label>
         </div>
         <div>
-          <label class="block text-xs opacity-60 mb-1">When complete</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">When complete</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={cd.on_complete}>
             <option value="notify">Notify only</option>
             <option value="shutdown">Shut cooker down</option>
             <option value="keep_warm">Drop to keep-warm</option>
           </select>
+          </label>
         </div>
       </div>
       {#if cd.on_complete === 'keep_warm'}
         <div>
-          <label class="block text-xs opacity-60 mb-1">Keep-warm temp</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Keep-warm temp</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" min="100" max="300" bind:value={cd.keep_warm_temp} />
+          </label>
         </div>
       {/if}
       <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveCookdone}>Save Cook Completion</button>
@@ -1032,18 +1046,21 @@
     <div class="px-4 pb-4 space-y-3">
       <div class="grid grid-cols-2 gap-2">
         <div>
-          <label class="block text-xs opacity-60 mb-1">Backlight (0-100)</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Backlight (0-100)</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" min="0" max="100" bind:value={lcd.backlight} />
+          </label>
         </div>
         <div>
-          <label class="block text-xs opacity-60 mb-1">Home screen</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Home screen</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={lcd.home_mode}>
             {#each Object.entries(homeModes) as [v, label]}<option value={Number(v)}>{label}</option>{/each}
           </select>
+          </label>
         </div>
         <div>
-          <label class="block text-xs opacity-60 mb-1">Probe rotation (s)</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Probe rotation (s)</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" min="1" max="60" bind:value={homeRotate} />
+          </label>
         </div>
       </div>
       <div class="space-y-2">
@@ -1061,7 +1078,7 @@
       <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLcd}>Save Display</button>
 
       <div class="pt-2 border-t border-black/10 dark:border-white/10">
-        <label class="block text-xs opacity-60 mb-1">Send a message to the display</label>
+        <span class="block text-xs opacity-60 mb-1">Send a message to the display</span>
         <div class="grid grid-cols-2 gap-2">
           <input class="bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" maxlength="16" placeholder="Line 1" bind:value={lcdMsg1} />
           <input class="bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" maxlength="16" placeholder="Line 2 (optional)" bind:value={lcdMsg2} />
@@ -1099,12 +1116,13 @@
         </div>
       {:else}
         <div>
-          <label class="block text-xs opacity-60 mb-1">Available firmware</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Available firmware</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={fwSel}>
             {#each fw.images as img}
               <option value={img.version}>{img.version}{img.installed ? ' (installed)' : ''}</option>
             {/each}
           </select>
+          </label>
         </div>
         {#if selectedImage?.changelog}<p class="text-xs opacity-70">{selectedImage.changelog}</p>{/if}
         {#if selectedImage?.eeprom_reset}
@@ -1170,8 +1188,9 @@
         {/if}
 
         <div>
-          <label class="block text-xs opacity-60 mb-1">Update channel (manifest URL)</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Update channel (manifest URL)</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" placeholder="https://…/update.json" bind:value={huUrl} />
+          </label>
           <p class="text-xs opacity-50 mt-1">Point this at your release manifest. Leave blank to disable updates. Builds are verified by SHA-256 before they are installed, and a bad build is rolled back automatically.</p>
         </div>
         <div class="flex gap-2">
@@ -1208,7 +1227,7 @@
       <p class="text-xs opacity-60">The controller logs a reading every second, so the database grows over time. Set a retention policy to keep it bounded.</p>
       <div class="grid grid-cols-2 gap-2">
         <div>
-          <label class="block text-xs opacity-60 mb-1">Delete samples older than</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Delete samples older than</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={db.retention_days}>
             <option value={0}>Keep all</option>
             <option value={30}>30 days</option>
@@ -1216,15 +1235,17 @@
             <option value={180}>180 days</option>
             <option value={365}>1 year</option>
           </select>
+          </label>
         </div>
         <div>
-          <label class="block text-xs opacity-60 mb-1">Thin to ~1/min after</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Thin to ~1/min after</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={db.downsample_days}>
             <option value={0}>Off</option>
             <option value={7}>7 days</option>
             <option value={14}>14 days</option>
             <option value={30}>30 days</option>
           </select>
+          </label>
         </div>
       </div>
       <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={cleanupDb}>Save &amp; clean up now</button>
@@ -1297,11 +1318,11 @@
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={mqtt.enabled} /> Publish to MQTT (auto-discovery)</label>
       {#if mqtt.connected}<div class="text-xs text-green-600 font-semibold">Connected</div>{:else if mqtt.last_error}<div class="text-xs text-red-500">{mqtt.last_error}</div>{/if}
       <div class="grid grid-cols-2 gap-2">
-        <div class="col-span-2"><label class="block text-xs opacity-60 mb-1">Broker host</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.host} placeholder="192.168.1.10" /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Port</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 nums" type="number" bind:value={mqtt.port} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Node ID</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.node_id} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Username</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.username} autocomplete="off" /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Password</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" type="password" bind:value={mqtt.password} placeholder={mqtt.has_password ? '•••••• (unchanged)' : ''} autocomplete="new-password" /></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Broker host</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.host} placeholder="192.168.1.10" /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Port</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 nums" type="number" bind:value={mqtt.port} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Node ID</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.node_id} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Username</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={mqtt.username} autocomplete="off" /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Password</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" type="password" bind:value={mqtt.password} placeholder={mqtt.has_password ? '•••••• (unchanged)' : ''} autocomplete="new-password" /></label></div>
       </div>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold disabled:opacity-50" disabled={mqttBusy} onclick={testMqtt}>Test Connection</button>
@@ -1316,12 +1337,12 @@
     <div class="px-4 pb-4 space-y-3">
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={notify.enabled} /> Send push alerts via ntfy</label>
       <div class="grid grid-cols-2 gap-2">
-        <div class="col-span-2"><label class="block text-xs opacity-60 mb-1">Server</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={notify.server} placeholder="https://ntfy.sh" /></div>
-        <div class="col-span-2"><label class="block text-xs opacity-60 mb-1">Topic</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={notify.topic} placeholder="my-heatermeter" /></div>
-        <div class="col-span-2"><label class="block text-xs opacity-60 mb-1">Access token (optional)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" type="password" bind:value={notify.token} placeholder={notify.has_token ? '•••••• (unchanged)' : ''} autocomplete="new-password" /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Debounce (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.debounce_sec} /></div>
-        <div><label class="block text-xs opacity-60 mb-1">Repeat every (min)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.repeat_min} /></div>
-        <div class="col-span-2"><label class="block text-xs opacity-60 mb-1">Device-dark failsafe (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.dark_timeout_sec} /><p class="text-xs opacity-50 mt-1">Alert if the board stops reporting for this long. 0 = off.</p></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Server</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={notify.server} placeholder="https://ntfy.sh" /></label></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Topic</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" bind:value={notify.topic} placeholder="my-heatermeter" /></label></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Access token (optional)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" type="password" bind:value={notify.token} placeholder={notify.has_token ? '•••••• (unchanged)' : ''} autocomplete="new-password" /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Debounce (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.debounce_sec} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Repeat every (min)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.repeat_min} /></label></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Device-dark failsafe (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={notify.dark_timeout_sec} /></label><p class="text-xs opacity-50 mt-1">Alert if the board stops reporting for this long. 0 = off.</p></div>
       </div>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold disabled:opacity-50" disabled={notifyBusy} onclick={testNotify}>Send Test</button>
@@ -1372,13 +1393,15 @@
       <p class="text-xs opacity-60">Protect the dashboard and API with a password. Off by default, so anyone on your network can control the cooker until you set one. (Home Assistant control via MQTT is separate and unaffected.)</p>
       {#if authCfg.enabled}
         <div>
-          <label class="block text-xs opacity-60 mb-1">Current password</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Current password</span>
           <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" type="password" autocomplete="current-password" bind:value={authPw} />
+          </label>
         </div>
       {/if}
       <div>
-        <label class="block text-xs opacity-60 mb-1">{authCfg.enabled ? 'New password' : 'Set a password'}</label>
+        <label class="block"><span class="block text-xs opacity-60 mb-1">{authCfg.enabled ? 'New password' : 'Set a password'}</span>
         <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" type="password" autocomplete="new-password" bind:value={authNew} />
+        </label>
       </div>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={saveAuthPassword}>{authCfg.enabled ? 'Change password' : 'Enable password'}</button>
@@ -1429,9 +1452,11 @@
   </div>
 {/if}
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && fwModal) fwModal = false; }} />
+
 {#if fwModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (fwModal = false)}>
-    <div class="hm-card rounded-2xl max-w-sm w-full p-4 space-y-3" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) fwModal = false; }}>
+    <div class="hm-card rounded-2xl max-w-sm w-full p-4 space-y-3" role="dialog" aria-modal="true" tabindex="-1">
       <h2 class="font-display text-lg">{fwAction === 'rollback' ? 'Roll back firmware' : 'Update firmware'}</h2>
       {#if fwAction === 'rollback'}
         <p class="text-sm">Reverts the controller to the firmware that was on it before the last update.</p>

@@ -336,9 +336,11 @@
   {/if}
 </div>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') noteOpen = false; }} />
+
 {#if noteOpen}
-  <div class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onclick={() => (noteOpen = false)}>
-    <div class="hm-card rounded-2xl p-4 w-full max-w-sm space-y-3" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) noteOpen = false; }}>
+    <div class="hm-card rounded-2xl p-4 w-full max-w-sm space-y-3" role="dialog" aria-modal="true" tabindex="-1">
       <h3 class="font-bold text-lg">Add note</h3>
       <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2" placeholder="e.g. wrapped the brisket" maxlength="120" bind:value={noteText} />
       <input type="file" accept="image/*" class="w-full text-sm" onchange={(e) => (noteFile = e.target.files[0])} />

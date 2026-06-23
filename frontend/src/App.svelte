@@ -180,20 +180,20 @@
       {:else if wizardStep === 1}
         <p class="text-sm opacity-70">What kind of pit probe do you have, and which unit do you cook in?</p>
         <div>
-          <label class="block text-xs opacity-60 mb-1">Pit probe type</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Pit probe type</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={wizProbe}>
             <option value="">Keep current</option>
             {#each Object.entries(wizProbePresets) as [key, p]}
               <option value={key}>{p.label}</option>
             {/each}
-          </select>
+          </select></label>
         </div>
         <div>
-          <label class="block text-xs opacity-60 mb-1">Temperature unit</label>
+          <label class="block"><span class="block text-xs opacity-60 mb-1">Temperature unit</span>
           <select class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2" bind:value={wizUnit}>
             <option value="F">Fahrenheit</option>
             <option value="C">Celsius</option>
-          </select>
+          </select></label>
         </div>
       {:else}
         <p class="text-sm opacity-70">You're ready to cook. Two optional extras live in Settings:</p>
@@ -332,7 +332,7 @@
 
     {#if modal}
       <div class={'fixed inset-0 z-40 bg-black/50 ' + (panelStyle === 'modal' ? 'flex items-center justify-center p-4 lg:p-6' : '')}
-           role="presentation" transition:fade={{ duration: 150 }} onclick={() => (modal = null)}>
+           role="presentation" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget) modal = null; }}>
         {#if panelStyle === 'modal'}
           <!-- Centered popup: fixed-height flex column. The header stays put
                and the body is the single scroll container, so a mouse wheel
@@ -340,7 +340,7 @@
                switching Settings tabs with different content lengths never
                resizes or re-centers the panel. -->
           <div class="hm-card rounded-2xl w-full max-w-2xl h-[88vh] flex flex-col overflow-hidden"
-               role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+               role="dialog" aria-modal="true" tabindex="-1">
             {@render panelInner()}
           </div>
         {:else}
@@ -349,8 +349,7 @@
           <div class={'hm-card absolute inset-y-0 w-full max-w-xl flex flex-col overflow-hidden shadow-2xl '
                       + (panelStyle === 'left' ? 'left-0 rounded-r-2xl rounded-l-none' : 'right-0 rounded-l-2xl rounded-r-none')}
                role="dialog" aria-modal="true" tabindex="-1"
-               transition:fly={{ x: panelStyle === 'left' ? -560 : 560, duration: 220, opacity: 1 }}
-               onclick={(e) => e.stopPropagation()}>
+               transition:fly={{ x: panelStyle === 'left' ? -560 : 560, duration: 220, opacity: 1 }}>
             {@render panelInner()}
           </div>
         {/if}
