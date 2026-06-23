@@ -71,6 +71,28 @@
     if (ambFood) t3 = parseTarget(alarms[7]);
   }
 
+  // -- cook control (start / stop) -------------------------------------------
+  let startTemp = $state(225);
+  const quickTemps = [225, 250, 275, 325];
+  const pitOn = $derived(Number(status.set_point) > 0);
+  const liveSession = $derived(sessions.find((s) => !s.ended_ts && !s.completed_ts) || null);
+
+  async function startCook() {
+    const v = Number(startTemp);
+    if (!(v > 0)) return;
+    try { await postJSON('setpoint', { value: v, unit }); } catch (_) {}
+  }
+  async function turnOffPit() {
+    if (!confirm('Turn the pit off? This stops heating.')) return;
+    try { await postJSON('command', { path: '/set?sp=O' }); } catch (_) {}
+  }
+  function fmtElapsed(startTs) {
+    if (!startTs) return '';
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - startTs));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  }
+
   // -- cook program ----------------------------------------------------------
   const running = $derived(!!(prog && prog.stage_count != null && !prog.done));
 
@@ -288,6 +310,42 @@
 
 <div class="px-4 pt-4 pb-28 lg:pb-10 max-w-xl lg:max-w-3xl mx-auto space-y-5">
 
+  <!-- Cook control: the one place to start or stop a cook -->
+  <div class="hm-card rounded-2xl p-4">
+    {#if pitOn}
+      <div class="text-xs uppercase tracking-wider opacity-50">Cooking</div>
+      <div class="font-display text-2xl font-bold leading-tight">
+        {fmt(status.pit)}°<span class="text-base font-normal opacity-50"> / {fmt(status.set_point)}°{unit}</span>
+      </div>
+      <div class="text-xs opacity-50">{status.pid_mode_label || ''}{liveSession ? ' · ' + fmtElapsed(liveSession.started_ts) : ''}</div>
+      <div class="flex gap-2 mt-3">
+        <button class="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-semibold" onclick={finishCook}>Finish cook</button>
+        <button class="px-4 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-800 font-semibold" onclick={turnOffPit}>Turn off pit</button>
+      </div>
+    {:else}
+      <h3 class="font-bold mb-1">Start a cook</h3>
+      <p class="text-xs opacity-60 mb-3">Set your pit temperature and the cook starts logging automatically. Or pick a guided cook or program below.</p>
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 shrink-0">
+          <input class="w-14 text-center bg-transparent py-2 tabular-nums" type="number" bind:value={startTemp} aria-label="Pit temperature" />
+          <span class="opacity-50 text-sm">°{unit}</span>
+        </div>
+        <button class="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-semibold" onclick={startCook}>Start cook</button>
+      </div>
+      <div class="grid grid-cols-4 gap-2 mt-2">
+        {#each quickTemps as q}
+          <button class="py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-sm tabular-nums" onclick={() => (startTemp = q)}>{q}°</button>
+        {/each}
+      </div>
+      {#if liveSession}
+        <div class="flex items-center justify-between mt-3 text-sm">
+          <span class="opacity-60">A cook is still open.</span>
+          <button class="px-3 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-800 font-medium" onclick={finishCook}>Finish it</button>
+        </div>
+      {/if}
+    {/if}
+  </div>
+
   <!-- Guided Cook -->
   <div class="hm-card rounded-2xl p-4">
     <h3 class="font-bold mb-1">Guided Cook</h3>
@@ -317,8 +375,8 @@
       </div>
     {:else}
       <p class="text-xs opacity-60 mb-2">Pick what you're cooking. The pit is set, the probe is named and targeted, and you get a heads-up at every milestone: the stall, the wrap, the pull, the rest.</p>
-      <div class="grid grid-cols-[1fr_auto] gap-2">
-        <select class="bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 h-10" bind:value={guidedSel}>
+      <div class="grid grid-cols-[2fr_1fr] gap-2">
+        <select class="w-full min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 h-10" bind:value={guidedSel} aria-label="What you're cooking">
           {#each [...new Set(guidedCat.map((c) => c.category))] as cat}
             <optgroup label={cat}>
               {#each guidedCat.filter((c) => c.category === cat) as c}
@@ -327,7 +385,7 @@
             </optgroup>
           {/each}
         </select>
-        <select class="bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 h-10" bind:value={guidedCh}>
+        <select class="w-full min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 h-10" bind:value={guidedCh} aria-label="On which probe">
           <option value="food1">{names[1] || 'Food 1'}</option>
           <option value="food2">{names[2] || 'Food 2'}</option>
           {#if ambFood}<option value="ambient">{names[3] || 'Ambient'}</option>{/if}
@@ -459,15 +517,10 @@
   <!-- Sessions -->
   <div class="hm-card rounded-2xl p-4">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="font-bold">Cooks</h3>
-      <div class="flex items-center gap-2">
-        {#if sessions[0] && !sessions[0].ended_ts && !sessions[0].completed_ts}
-          <button class="text-xs px-2 py-1 rounded bg-green-600 text-white font-semibold" onclick={finishCook}>Finish cook</button>
-        {/if}
-        {#if sessions.length}
-          <a class="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/10" href="/api/export.csv" download>Export all</a>
-        {/if}
-      </div>
+      <h3 class="font-bold">Past cooks</h3>
+      {#if sessions.length}
+        <a class="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/10" href="/api/export.csv" download>Export all</a>
+      {/if}
     </div>
     {#if cookStats && cookStats.cooks > 1}
       <p class="text-xs opacity-50 mb-2">{cookStats.cooks} cooks logged · average {fmtHrs(cookStats.avg_duration_secs)}{cookStats.stalls_seen ? ` · your stalls average ${fmtHrs(cookStats.avg_stall_secs)}` : ''}{cookStats.longest_secs ? ` · longest ${fmtHrs(cookStats.longest_secs)}` : ''}</p>
@@ -542,4 +595,7 @@
      Edit list buttons are unaffected. */
   select,
   input[type="number"] { height: 2.5rem; }
+  /* Let selects shrink + truncate inside flex/grid rows instead of overflowing
+     the card when an option (e.g. a long probe name) is wide. */
+  select { min-width: 0; }
 </style>

@@ -79,6 +79,29 @@ def test_alarm_edge_records_target_event():
     assert "reached target" in evs[0]["label"]
 
 
+def test_food_target_change_records_event():
+    svc, tt = _svc()
+    svc._on_line(_hmsu())                                  # baseline; targets observed
+    # Set Food 1 target to 203 (non-ringing high alarm = a cook target).
+    svc._on_line(protocol.frame("HMAL,-1,-1,-1,203,-1,-1,-1,-1"))
+    tt[0] += 1
+    svc._on_line(_hmsu())                                  # tick -> "target set"
+    evs = [e for e in svc.store.list_events() if e["kind"] == "food_target"]
+    assert evs and evs[0]["channel"] == "food1" and evs[0]["value"] == 203.0
+    assert "203" in evs[0]["label"]
+    # Change it -> another marker.
+    svc._on_line(protocol.frame("HMAL,-1,-1,-1,195,-1,-1,-1,-1"))
+    tt[0] += 1
+    svc._on_line(_hmsu())
+    evs = [e for e in svc.store.list_events() if e["kind"] == "food_target"]
+    assert len(evs) == 2 and evs[-1]["value"] == 195.0
+    # Steady -> no repeat.
+    tt[0] += 1
+    svc._on_line(_hmsu())
+    evs = [e for e in svc.store.list_events() if e["kind"] == "food_target"]
+    assert len(evs) == 2
+
+
 def test_probe_event_lands_on_timeline():
     svc, tt = _svc()
     svc.save_probewatch({"dropout_secs": 5, "stall_enabled": False})

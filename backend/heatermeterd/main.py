@@ -88,6 +88,7 @@ def main(argv=None) -> int:
         service.cookdone_config_path = os.path.join(cfg_dir, "cookdone.json")
         service.probewatch_config_path = os.path.join(cfg_dir, "probewatch.json")
         service.lidrecovery_config_path = os.path.join(cfg_dir, "lidrecovery.json")
+        service.uiprefs_config_path = os.path.join(cfg_dir, "uiprefs.json")
         service.profiles_path = os.path.join(cfg_dir, "profiles.json")
         service.probe_presets_path = os.path.join(cfg_dir, "probe_presets.json")
         service.storage_config_path = os.path.join(cfg_dir, "storage.json")

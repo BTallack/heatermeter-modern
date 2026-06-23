@@ -242,7 +242,8 @@
   async function loadHistory() {
     const q = rangeQuery();
     try { setData(await getJSON(`history${q}`)); } catch (_) {}
-    try { notes = await getJSON('notes'); if (chart) chart.redraw(); } catch (_) {}
+    // Notes + events share the graph's scope so old cooks' markers don't bleed in.
+    try { notes = await getJSON(`notes${q}`); if (chart) chart.redraw(); } catch (_) {}
     try { events = await getJSON(`events${q}`); if (chart) chart.redraw(); } catch (_) {}
   }
   async function loadSessions() {
@@ -263,7 +264,7 @@
     if (noteFile) { try { photo_b64 = await fileToDataURL(noteFile); } catch (_) {} }
     try {
       await postJSON('notes', { text: noteText.trim() || '(photo)', photo_b64 });
-      notes = await getJSON('notes'); if (chart) chart.redraw();
+      notes = await getJSON(`notes${rangeQuery()}`); if (chart) chart.redraw();
     } catch (_) {}
     noteOpen = false; noteText = ''; noteFile = null;
   }

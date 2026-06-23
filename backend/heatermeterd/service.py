@@ -93,6 +93,11 @@ class HeaterMeterService:
         # Auto timeline events: edge-detector state for lid + setpoint markers.
         self._lid_open_prev = False
         self._setpoint_prev: Optional[float] = None
+        # Per-probe high-alarm (cook target) tracker for food-target-change markers.
+        self._food_target_prev: dict = {}
+        # Browser-agnostic UI prefs (e.g. welcome-banner dismissed), persisted
+        # server-side so they're a property of the HeaterMeter, not the browser.
+        self.uiprefs_config_path: Optional[str] = None
         # True once the current session's cook completed (resets per session).
         self._session_completed = False
         # Active guided cook (one at a time). See guided.py.
@@ -489,6 +494,35 @@ class HeaterMeterService:
         except Exception:
             pass
 
+    # -- UI prefs (browser-agnostic, server-persisted) --------------------
+
+    def get_uiprefs(self) -> dict:
+        """Small UI state shared across browsers (e.g. welcome-banner dismissed).
+        Defaults to not-welcomed so a fresh HeaterMeter shows the intro once."""
+        d = {"welcomed": False}
+        if self.uiprefs_config_path and os.path.exists(self.uiprefs_config_path):
+            try:
+                with open(self.uiprefs_config_path) as f:
+                    d.update({k: v for k, v in json.load(f).items()})
+            except Exception:
+                pass
+        d["welcomed"] = bool(d.get("welcomed"))
+        return d
+
+    def save_uiprefs(self, partial: dict) -> dict:
+        cur = self.get_uiprefs()
+        if isinstance(partial, dict) and "welcomed" in partial:
+            cur["welcomed"] = bool(partial["welcomed"])
+        if self.uiprefs_config_path:
+            try:
+                os.makedirs(os.path.dirname(self.uiprefs_config_path) or ".",
+                            exist_ok=True)
+                with open(self.uiprefs_config_path, "w") as f:
+                    json.dump(cur, f)
+            except Exception:
+                pass
+        return cur
+
     def _dark_watchdog(self) -> None:
         """Periodic: alert once if the board stops reporting for too long."""
         cfg = self.notify_effective_config()
@@ -813,6 +847,30 @@ class HeaterMeterService:
                 self._record_event(ts, "setpoint", label=f"Set {round(sp)}°",
                                    value=float(sp))
             self._setpoint_prev = float(sp)
+        # Food/probe target changes: a probe's high-alarm threshold is its cook
+        # target. Mark when one is set or changed (>= 1 degree) after the first
+        # observation, so the graph shows "Food 1 -> 203" the moment you set it.
+        self._check_target_edges(ts)
+
+    def _check_target_edges(self, ts: float) -> None:
+        al = self.state.alarms or []
+        names = self.state.probe_names or ["Pit", "Food 1", "Food 2", "Ambient"]
+        for probe, channel in ((1, "food1"), (2, "food2"), (3, "ambient")):
+            idx = probe * 2 + 1
+            cur = None
+            if idx < len(al):
+                try:
+                    v = float(str(al[idx]).rstrip("LH"))
+                    cur = v if v >= 0 else None   # negative/blank == no target
+                except (TypeError, ValueError):
+                    cur = None
+            prev = self._food_target_prev.get(probe, "unset")
+            if prev != "unset" and cur is not None and (
+                    prev is None or abs(cur - prev) >= 1.0):
+                name = names[probe] if probe < len(names) else channel
+                self._record_event(ts, "food_target", channel=channel,
+                                   label=f"{name} → {round(cur)}°", value=cur)
+            self._food_target_prev[probe] = cur
 
     # -- guided cooks --------------------------------------------------------
 

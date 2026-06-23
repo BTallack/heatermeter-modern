@@ -51,7 +51,13 @@
     checkAuth();
     window.addEventListener('hm-auth-required', () => { needsAuth = true; });
     onSystemChange(() => { if (theme === 'auto') dark = applyTheme(); });
-    welcomed = localStorage.getItem('hm.welcomed') === '1';
+    // Welcome banner is remembered on the HeaterMeter, not the browser: a local
+    // dismissal is the instant fast-path; otherwise ask the server so a new
+    // browser/device respects a dismissal made anywhere. Stays hidden until we
+    // know, so it never flashes.
+    if (localStorage.getItem('hm.welcomed') === '1') welcomed = true;
+    else getJSON('ui-prefs').then((p) => { welcomed = !!(p && p.welcomed); })
+                            .catch(() => { welcomed = false; });
     readPanelStyle();
     window.addEventListener('hm-prefs', readPanelStyle);
     window.addEventListener('hm-run-wizard', openWizard);
@@ -87,7 +93,11 @@
 
   // First-run welcome banner (shown once until dismissed).
   let welcomed = $state(true);
-  function dismissWelcome() { welcomed = true; try { localStorage.setItem('hm.welcomed', '1'); } catch (_) {} }
+  function dismissWelcome() {
+    welcomed = true;
+    try { localStorage.setItem('hm.welcomed', '1'); } catch (_) {}
+    postJSON('ui-prefs', { welcomed: true }).catch(() => {});   // remember server-side
+  }
   function openSettings() { if (isDesktop) modal = 'settings'; else tab = 'settings'; dismissWelcome(); }
 
   // First-run setup wizard: cooker PID preset, pit probe type, units. Three

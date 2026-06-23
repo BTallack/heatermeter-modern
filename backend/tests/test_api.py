@@ -379,6 +379,49 @@ def test_push_api():
         assert r3["removed"] is True and r3["token_count"] == 0
 
 
+def test_ui_prefs_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    import tempfile
+    from heatermeterd.api import create_app
+
+    svc = HeaterMeterService(SimLink(interval=10.0, seed=1), Store(":memory:"))
+    svc.uiprefs_config_path = tempfile.mkstemp(suffix=".json")[1]
+    app = create_app(svc)
+    with TestClient(app) as c:
+        assert c.get("/api/ui-prefs").json()["welcomed"] is False
+        assert c.post("/api/ui-prefs", json={"welcomed": True}).json()["welcomed"] is True
+        # Persists across a fresh service (i.e. any browser sees it).
+        svc2 = HeaterMeterService(SimLink(interval=10.0, seed=1), Store(":memory:"))
+        svc2.uiprefs_config_path = svc.uiprefs_config_path
+        assert svc2.get_uiprefs()["welcomed"] is True
+
+
+def test_notes_scoped_by_session_and_window():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    from heatermeterd.api import create_app
+
+    svc = HeaterMeterService(SimLink(interval=10.0, seed=1), Store(":memory:"))
+    now = svc.time_fn()
+    svc.store.add_note(now - 9 * 24 * 3600, "old cook", session_id=1)   # ~9 days ago
+    svc.store.add_note(now - 60, "this cook", session_id=2)             # 1 min ago
+    app = create_app(svc)
+    with TestClient(app) as c:
+        # No scope -> everything (old behavior, now only used deliberately).
+        assert len(c.get("/api/notes").json()) == 2
+        # Scoped to the current session -> only this cook's note.
+        s2 = c.get("/api/notes?session_id=2").json()
+        assert [n["text"] for n in s2] == ["this cook"]
+        # Trailing window -> the week-old note is excluded.
+        recent = c.get("/api/notes?minutes=120").json()
+        assert [n["text"] for n in recent] == ["this cook"]
+
+
 def test_lid_recovery_api():
     if not HAVE_WEB:
         print("    (skipped: fastapi/httpx not installed)")

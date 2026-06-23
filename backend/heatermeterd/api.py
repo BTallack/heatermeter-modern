@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -151,6 +151,10 @@ class ProbeWatchBody(BaseModel):
     stall_enabled: bool | None = None    # stall start/end detection
     stall_low: float | None = None
     stall_high: float | None = None
+
+
+class UIPrefsBody(BaseModel):
+    welcomed: bool | None = None        # welcome banner dismissed (per-device-agnostic)
 
 
 class PushRegisterBody(BaseModel):
@@ -961,8 +965,19 @@ def create_app(service) -> FastAPI:
     # -- notes -------------------------------------------------------------
 
     @app.get("/api/notes")
-    async def list_notes(session_id: int | None = None):
-        return await asyncio.to_thread(service.store.list_notes, session_id)
+    async def list_notes(session_id: int | None = None,
+                         minutes: float | None = None):
+        since = (service.time_fn() - minutes * 60) if minutes else None
+        return await asyncio.to_thread(service.store.list_notes, session_id, since)
+
+    @app.get("/api/ui-prefs")
+    async def get_ui_prefs():
+        return service.get_uiprefs()
+
+    @app.post("/api/ui-prefs")
+    async def set_ui_prefs(body: UIPrefsBody):
+        return service.save_uiprefs({k: v for k, v in body.model_dump().items()
+                                     if v is not None})
 
     def _decode_photo(b64: str | None):
         """Decode a data-URL/base64 photo. Returns (bytes, ext) or (None, None)
