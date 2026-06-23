@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.5.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -151,6 +151,29 @@ class ProbeWatchBody(BaseModel):
     stall_enabled: bool | None = None    # stall start/end detection
     stall_low: float | None = None
     stall_high: float | None = None
+
+
+class PushRegisterBody(BaseModel):
+    token: str                          # APNs device token (hex)
+    platform: str = "ios"
+
+
+class PushConfigBody(BaseModel):
+    enabled: bool | None = None
+    sandbox: bool | None = None         # True for debug builds (sandbox APNs)
+    team_id: str | None = None
+    key_id: str | None = None
+    key_path: str | None = None
+    bundle_id: str | None = None
+
+
+class LidRecoveryBody(BaseModel):
+    enabled: bool | None = None          # smart lid-open recovery on/off
+    recover_delta: float | None = None   # rise off the low that signals "closed"
+    start_pct: int | None = None         # gentle initial fan % on resume
+    ramp_secs: int | None = None         # ramp start_pct -> full over this long
+    min_armed_secs: int | None = None    # dwell before recovery can fire
+    step_pct: int | None = None          # ramp quantisation step
 
 
 class PidInternalsBody(BaseModel):
@@ -574,6 +597,17 @@ def create_app(service) -> FastAPI:
         merged = {**cur, **{k: v for k, v in body.model_dump().items()
                             if v is not None}}
         return service.save_probewatch(merged)
+
+    @app.get("/api/lid-recovery")
+    async def get_lid_recovery():
+        return service.get_lidrecovery()
+
+    @app.post("/api/lid-recovery")
+    async def set_lid_recovery(body: LidRecoveryBody):
+        cur = service.get_lidrecovery()
+        merged = {**cur, **{k: v for k, v in body.model_dump().items()
+                            if v is not None}}
+        return service.save_lidrecovery(merged)
 
     @app.post("/api/cook/finish")
     async def finish_cook():
@@ -1060,6 +1094,34 @@ def create_app(service) -> FastAPI:
         return await asyncio.to_thread(
             notify_mod.send, cfg, "HeaterMeter test",
             "Notifications are working.", "default", "bell")
+
+    # -- native iOS push (APNs) -------------------------------------------
+
+    @app.get("/api/push")
+    async def get_push():
+        return service.push_status()
+
+    @app.post("/api/push")
+    async def set_push(body: PushConfigBody):
+        return service.save_push_config(
+            {k: v for k, v in body.model_dump().items() if v is not None})
+
+    @app.post("/api/push/register")
+    async def register_push(body: PushRegisterBody):
+        result = service.register_push_token(body.token, body.platform)
+        if not result.get("ok"):
+            return JSONResponse(result, status_code=400)
+        return result
+
+    @app.post("/api/push/test")
+    async def test_push():
+        service._push("HeaterMeter test",
+                      "Push notifications are working.", priority="default")
+        return {"ok": True, **service.push_status()}
+
+    @app.delete("/api/push/{token}")
+    async def delete_push(token: str):
+        return service.remove_push_token(token)
 
     # -- websocket ---------------------------------------------------------
 

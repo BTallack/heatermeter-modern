@@ -349,6 +349,59 @@ def test_probe_watch_api():
         assert r["enabled"] is True   # untouched field preserved
 
 
+def test_push_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    import tempfile
+    from heatermeterd.api import create_app
+
+    link = SimLink(setpoint=225.0, interval=10.0, seed=1)
+    svc = HeaterMeterService(link, Store(":memory:"))
+    svc.push_config_path = tempfile.mkstemp(suffix=".json")[1]
+    app = create_app(svc)
+    with TestClient(app) as c:
+        d = c.get("/api/push").json()
+        assert d["enabled"] is False and d["token_count"] == 0
+        # A device registers its APNs token.
+        r = c.post("/api/push/register", json={"token": "deadbeef"}).json()
+        assert r["ok"] and r["token_count"] == 1
+        assert c.get("/api/push").json()["token_count"] == 1
+        # Empty token is a 400.
+        assert c.post("/api/push/register", json={"token": ""}).status_code == 400
+        # Operator config merges (credentials, sandbox flag).
+        r2 = c.post("/api/push", json={"enabled": True, "sandbox": True,
+                                       "bundle_id": "com.x.HM"}).json()
+        assert r2["sandbox"] is True and r2["bundle_id"] == "com.x.HM"
+        # Deregister.
+        r3 = c.request("DELETE", "/api/push/deadbeef").json()
+        assert r3["removed"] is True and r3["token_count"] == 0
+
+
+def test_lid_recovery_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    from heatermeterd.api import create_app
+
+    link = SimLink(setpoint=225.0, interval=10.0, seed=1)
+    svc = HeaterMeterService(link, Store(":memory:"))
+    app = create_app(svc)
+    with TestClient(app) as c:
+        d = c.get("/api/lid-recovery").json()
+        assert d["enabled"] is True and "recover_delta" in d and "ramp_secs" in d
+        # Partial update merges + clamps; start_pct floors at 0, ramp_secs caps.
+        r = c.post("/api/lid-recovery",
+                   json={"start_pct": -10, "ramp_secs": 99999,
+                         "enabled": False}).json()
+        assert r["start_pct"] == 0 and r["ramp_secs"] == 600
+        assert r["enabled"] is False
+        assert r["recover_delta"] == d["recover_delta"]   # untouched preserved
+        assert c.get("/api/lid-recovery").json()["enabled"] is False
+
+
 def test_cook_done_api():
     if not HAVE_WEB:
         print("    (skipped: fastapi/httpx not installed)")

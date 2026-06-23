@@ -19,10 +19,12 @@ import secrets
 import time
 from typing import Callable, Optional
 
-from . import auth, cookdone, firmware, fuel, guided, hostupdate, probewatch, protocol
+from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
+               lidrecovery, probewatch, protocol)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
+from .lidrecovery import LidRecovery
 from .probewatch import ProbeWatch
 from .state import HeaterMeterState
 
@@ -67,6 +69,11 @@ class HeaterMeterService:
         self.mqtt_status: dict = {"connected": False, "last_error": None}
         # Push notifications (ntfy). Config persisted to data/notify.json.
         self.notify_config_path: Optional[str] = None
+        # Native iOS push (APNs). Config + registered device tokens persisted to
+        # data/push.json; see apns.py. Off + no-op until configured.
+        self.push_config_path: Optional[str] = None
+        self._push_cfg: dict = apns.default_config()
+        self._apns: Optional["apns.ApnsSender"] = None
         self.display_config_path: Optional[str] = None
         self._display_applied = False
         # Meater-style automatic cook completion (see cookdone.py).
@@ -78,6 +85,11 @@ class HeaterMeterService:
         self._probewatch = ProbeWatch()
         # Per-channel health surfaced in /api/status for a "disconnected" badge.
         self.probe_health: dict = {}
+        # Smart lid-open recovery (see lidrecovery.py): cuts the firmware's fixed
+        # lid-open wait short once the pit recovers, ramping the fan back gently.
+        self.lidrecovery_config_path: Optional[str] = None
+        self._lidrecovery = LidRecovery()
+        self._lidrecovery_active = False   # for one timeline marker per event
         # Auto timeline events: edge-detector state for lid + setpoint markers.
         self._lid_open_prev = False
         self._setpoint_prev: Optional[float] = None
@@ -102,10 +114,11 @@ class HeaterMeterService:
         self.auth_config_path: Optional[str] = None
         # Per-alarm notify bookkeeping for debounce + repeat: key -> {since,last}.
         self._alarm_notify: dict = {}
-        # "Almost done" ETA push bookkeeping: channels already notified this run,
-        # plus a throttle timestamp so we only predict periodically.
+        # "Almost done" ETA push bookkeeping: channels already notified this run.
         self._eta_notified: set = set()
-        self._last_eta_check: float = 0.0
+        # Throttle for the periodic prediction refresh (feeds last_predictions for
+        # the MQTT "predicted done" sensors + the cook report, independent of push).
+        self._last_pred_refresh: float = 0.0
         # True while we've flagged the board as "gone dark" (no data).
         self._device_dark = False
         # Auto-tune session (None when idle). See heatermeterd.autotune.
@@ -155,14 +168,27 @@ class HeaterMeterService:
 
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
-        # Resume an open session if the daemon restarted mid-cook within the gap.
+        # Resume an open session ONLY if a cook was actually running when power
+        # was lost (the board had a setpoint). If the cooker was idle/off, the
+        # unit was likely just unplugged and moved (e.g. bench -> grill), so we
+        # close the stale session - preserving its data - and let the next
+        # sample start a fresh cook, instead of stitching the old location's
+        # readings onto the new one.
         existing = self.store.open_session()
         if existing:
-            self.session_id = existing["id"]
+            last = self.store.last_sample(existing["id"])
+            if self._sample_was_active(last):
+                self.session_id = existing["id"]
+            else:
+                self.store.close_session(
+                    existing["id"],
+                    (last or {}).get("ts") or self.time_fn())
         # Apply the saved cook-completion config; if the resumed session was
         # already completed, suppress a duplicate completion/notification.
         self._cookdone.set_config(self._load_cookdone_file())
         self._probewatch.set_config(self._load_probewatch_file())
+        self._lidrecovery.set_config(self._load_lidrecovery_file())
+        self._push_cfg = self._load_push_file()
         if existing and existing.get("completed_ts"):
             self._cookdone.mark_already_complete()
         self.link.start(self._on_line, self.loop)
@@ -251,6 +277,7 @@ class HeaterMeterService:
             node_id=(cfg.get("node_id") or "hm"),
             on_setpoint=self.mqtt_set_setpoint,
             on_target=self.mqtt_set_target,
+            on_name=self.mqtt_set_name,
             unit=(self.state.pid.get("units") or "F"))
         self.mqtt = bridge
         try:
@@ -344,7 +371,14 @@ class HeaterMeterService:
 
     def _push(self, title: str, message: str, priority: str = "default",
               tags: str = "") -> None:
-        """Fire a push notification off the event loop (best-effort, never raises)."""
+        """Fan a notification out to every configured channel (ntfy + native
+        iOS/APNs), each independently gated. Best-effort, never raises."""
+        self._push_ntfy(title, message, priority, tags)
+        self._push_apns(title, message, priority)
+
+    def _push_ntfy(self, title: str, message: str, priority: str = "default",
+                   tags: str = "") -> None:
+        """Fire an ntfy push off the event loop (best-effort)."""
         cfg = self.notify_effective_config()
         if not (cfg.get("enabled") and cfg.get("topic")):
             return
@@ -353,6 +387,105 @@ class HeaterMeterService:
             if self.loop is not None:
                 self.loop.run_in_executor(
                     None, lambda: notify.send(cfg, title, message, priority, tags))
+        except Exception:
+            pass
+
+    # -- native iOS push (APNs) -------------------------------------------
+
+    def _load_push_file(self) -> dict:
+        if self.push_config_path and os.path.exists(self.push_config_path):
+            try:
+                with open(self.push_config_path) as f:
+                    return apns.sanitize(json.load(f))
+            except Exception:
+                pass
+        return apns.default_config()
+
+    def _save_push_file(self) -> None:
+        if not self.push_config_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.push_config_path) or ".",
+                        exist_ok=True)
+            with open(self.push_config_path, "w") as f:
+                json.dump(self._push_cfg, f)
+            os.chmod(self.push_config_path, 0o600)   # holds device tokens
+        except Exception:
+            pass
+
+    def push_status(self) -> dict:
+        """Public push state for the config UI / app (never leaks the key)."""
+        cfg = self._push_cfg
+        return {
+            "enabled": bool(cfg.get("enabled")),
+            "configured": apns.credentials_complete(cfg),
+            "available": apns.ApnsSender.available(),
+            "sandbox": bool(cfg.get("sandbox")),
+            "bundle_id": cfg.get("bundle_id", ""),
+            "token_count": len(cfg.get("tokens") or []),
+        }
+
+    def register_push_token(self, token: str, platform: str = "ios") -> dict:
+        """An app instance registers (or refreshes) its APNs device token."""
+        reg = apns.PushRegistry(self._push_cfg.get("tokens"))
+        if not reg.register(token, platform, now=self.time_fn()):
+            return {"ok": False, "error": "empty token"}
+        self._push_cfg["tokens"] = reg.to_list()
+        self._save_push_file()
+        return {"ok": True, "token_count": len(self._push_cfg["tokens"])}
+
+    def remove_push_token(self, token: str) -> dict:
+        reg = apns.PushRegistry(self._push_cfg.get("tokens"))
+        removed = reg.remove(token)
+        self._push_cfg["tokens"] = reg.to_list()
+        self._save_push_file()
+        return {"ok": True, "removed": removed,
+                "token_count": len(self._push_cfg["tokens"])}
+
+    def save_push_config(self, partial: dict) -> dict:
+        """Merge operator-supplied APNs credentials (team/key/bundle/sandbox/
+        enabled) over the current config. Tokens are managed separately."""
+        cfg = dict(self._push_cfg)
+        for k in ("enabled", "sandbox", "team_id", "key_id", "key_path",
+                  "bundle_id"):
+            if k in partial and partial[k] is not None:
+                cfg[k] = partial[k]
+        self._push_cfg = apns.sanitize(cfg)
+        self._apns = None   # rebuild the sender with the new creds
+        self._save_push_file()
+        return self.push_status()
+
+    def _apns_sender(self) -> Optional["apns.ApnsSender"]:
+        cfg = self._push_cfg
+        if not (cfg.get("enabled") and apns.credentials_complete(cfg)
+                and apns.ApnsSender.available()):
+            return None
+        if self._apns is None:
+            self._apns = apns.ApnsSender(cfg, time_fn=self.time_fn)
+        return self._apns
+
+    def _push_apns(self, title: str, message: str,
+                   priority: str = "default") -> None:
+        """Broadcast an alert to every registered device token off the event
+        loop. Prunes tokens APNs reports as 410 Unregistered. Best-effort."""
+        sender = self._apns_sender()
+        tokens = list(self._push_cfg.get("tokens") or [])
+        if sender is None or not tokens or self.loop is None:
+            return
+        payload = apns.alert_payload(title, message, priority=priority)
+
+        def _do():
+            dead = []
+            for t in tokens:
+                res = sender.send(t["token"], payload, push_type="alert",
+                                  priority=priority)
+                if res.get("unregistered"):
+                    dead.append(t["token"])
+            for tok in dead:
+                self.loop.call_soon_threadsafe(self.remove_push_token, tok)
+
+        try:
+            self.loop.run_in_executor(None, _do)
         except Exception:
             pass
 
@@ -435,6 +568,78 @@ class HeaterMeterService:
                 json.dump(clean, f)
         self._cookdone.set_config(clean)
         return clean
+
+    # -- smart lid recovery -----------------------------------------------
+
+    def _load_lidrecovery_file(self) -> dict:
+        if (self.lidrecovery_config_path
+                and os.path.exists(self.lidrecovery_config_path)):
+            try:
+                with open(self.lidrecovery_config_path) as f:
+                    return lidrecovery.sanitize(json.load(f))
+            except Exception:
+                pass
+        return lidrecovery.sanitize({})
+
+    def get_lidrecovery(self) -> dict:
+        """The live effective config (always current, with or without a file)."""
+        return dict(self._lidrecovery.cfg)
+
+    def save_lidrecovery(self, cfg: dict) -> dict:
+        clean = lidrecovery.sanitize(cfg)
+        if self.lidrecovery_config_path:
+            os.makedirs(os.path.dirname(self.lidrecovery_config_path) or ".",
+                        exist_ok=True)
+            with open(self.lidrecovery_config_path, "w") as f:
+                json.dump(clean, f)
+        self._lidrecovery.set_config(clean)
+        return clean
+
+    def _drive_lid_recovery(self, ts: float) -> None:
+        """Per-HMSU: let the lid-recovery detector shorten the firmware's fixed
+        lid-open wait and ramp the fan back gently. Best-effort; never raises."""
+        if not self._lidrecovery.cfg.get("enabled"):
+            return
+        st = self.state.status
+        try:
+            result = self._lidrecovery.update(
+                ts, st.lid_countdown, st.pit, st.set_point)
+        except Exception:
+            return
+        actions = result.get("actions") or []
+        if not actions:
+            # Detector returned to idle after a recovery run: clear the marker.
+            if result.get("state") == "idle":
+                self._lidrecovery_active = False
+            return
+        for act in actions:
+            kind = act.get("type")
+            try:
+                if kind == "cancel_lid":
+                    self.link.send(protocol.lid_open_cancel())
+                    if not self._lidrecovery_active:
+                        self._lidrecovery_active = True
+                        self._record_event(ts, "lid_recovery",
+                                           label="Lid recovery: heating resumed")
+                        self._push("Lid recovered",
+                                   "Pit is climbing again - resuming the fan "
+                                   "gently instead of waiting out the timer.",
+                                   priority="low", tags="dash")
+                        self._emit({"type": "lid_recovery", "event": "start",
+                                    "ts": ts})
+                elif kind == "manual":
+                    self.link.send(protocol.set_manual_output(int(act["pct"])))
+                    self._emit({"type": "lid_recovery", "event": "ramp",
+                                "ts": ts, "pct": int(act["pct"])})
+                elif kind == "resume_auto":
+                    sp = act.get("setpoint")
+                    if sp is not None:
+                        self.link.send(protocol.set_setpoint(int(round(sp))))
+                    self._lidrecovery_active = False
+                    self._emit({"type": "lid_recovery", "event": "done",
+                                "ts": ts})
+            except Exception:
+                pass
 
     # -- probe preset selection -------------------------------------------
 
@@ -894,28 +1099,36 @@ class HeaterMeterService:
     def fuel_status(self) -> dict:
         return self._fuel.status()
 
+    @staticmethod
+    def _iso_local(epoch: float) -> str:
+        """Epoch seconds -> local ISO-8601 with a colon in the offset, the form
+        Home Assistant's `timestamp` device_class expects."""
+        iso = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(epoch))
+        # strftime %z gives +HHMM; HA wants +HH:MM.
+        if len(iso) >= 5 and iso[-5] in "+-":
+            iso = iso[:-2] + ":" + iso[-2:]
+        return iso
+
     def _mqtt_extras(self, ts: float) -> dict:
         """Cook-intelligence fields for the HA state payload: any-channel stall,
-        fuel-low, and the soonest fresh predicted-done time (ISO-8601)."""
+        fuel-low, the soonest fresh predicted-done time, and a per-channel
+        predicted-done map (all ISO-8601, or None when there is no fresh ETA)."""
         stalled = False
         try:
             stalled = any(c.stalled for c in self._probewatch._ch.values())
         except Exception:
             pass
-        done_at = None
-        for p in self.last_predictions.values():
+        per_channel: dict = {}
+        soonest = None
+        for channel, p in self.last_predictions.items():
             # Only trust predictions refreshed within the last 2 minutes.
-            if p.get("done_at") and (ts - p.get("ts", 0)) <= 120:
-                done_at = p["done_at"] if done_at is None else min(done_at,
-                                                                   p["done_at"])
-        iso = None
-        if done_at is not None:
-            iso = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(done_at))
-            # strftime %z gives +HHMM; HA's timestamp class wants +HH:MM.
-            if len(iso) >= 5 and iso[-5] in "+-":
-                iso = iso[:-2] + ":" + iso[-2:]
+            da = p.get("done_at")
+            if da and (ts - p.get("ts", 0)) <= 120:
+                per_channel[channel] = self._iso_local(da)
+                soonest = da if soonest is None else min(soonest, da)
         return {"stalled": stalled, "fuel_low": self._fuel.alerted,
-                "predicted_done": iso}
+                "predicted_done": self._iso_local(soonest) if soonest else None,
+                "predicted_done_by": per_channel}
 
     def send_lcd_message(self, line1: str, line2: str = "") -> dict:
         """Show a transient message on the board's LCD (the /set?tt toast).
@@ -1769,6 +1982,27 @@ class HeaterMeterService:
         self.loop.call_soon_threadsafe(
             lambda: self.link.send(protocol.set_alarms(thresholds)))
 
+    _MQTT_NAME_PROBE = {"pit": 0, "food1": 1, "food2": 2, "ambient": 3}
+
+    def mqtt_set_name(self, channel: str, text: str) -> None:
+        """Probe-rename command from Home Assistant: set that probe's name on
+        the board (cleaned + capped to the EEPROM limit). MQTT thread -> loop."""
+        probe = self._MQTT_NAME_PROBE.get(channel)
+        if probe is None or self.loop is None:
+            return
+        name = protocol.clean_probe_name(text)
+        if not name:
+            return
+        self.loop.call_soon_threadsafe(
+            lambda: self.link.send(protocol.set_probe_name(probe, name)))
+
+    def _mqtt_names(self) -> dict:
+        names = self.state.probe_names or []
+        out = {}
+        for ch, idx in (("pit", 0), ("food1", 1), ("food2", 2), ("ambient", 3)):
+            out[ch] = names[idx] if idx < len(names) and names[idx] else None
+        return out
+
     def set_units(self, new_unit: str) -> dict:
         """Switch the board's temperature unit (F/C). The firmware does not
         convert stored values, so convert and re-send the setpoint (absolute),
@@ -2109,6 +2343,19 @@ class HeaterMeterService:
 
     # -- session lifecycle -------------------------------------------------
 
+    @staticmethod
+    def _sample_was_active(sample: Optional[dict]) -> bool:
+        """True if a stored sample shows a cook actively running - i.e. the
+        board had a setpoint (positive = PID target, negative = manual fan).
+        A blank/zero setpoint means the cooker was idle/off."""
+        if not sample:
+            return False
+        sp = sample.get("set_point")
+        try:
+            return sp is not None and float(sp) != 0.0
+        except (TypeError, ValueError):
+            return False
+
     def _ensure_session(self, ts: float) -> int:
         """Start a new session if none is open or the idle gap has elapsed."""
         if (self.session_id is not None and self._last_sample_ts is not None
@@ -2173,10 +2420,12 @@ class HeaterMeterService:
                            "The controller is reporting again.",
                            tags="white_check_mark")
             self._check_alarms(ts)
+            self._refresh_predictions(ts)
             self._check_eta_push(ts)
             self._check_cook_done(ts, sid)
             self._check_probe_health(ts)
             self._check_timeline_edges(ts)
+            self._drive_lid_recovery(ts)
             self._drive_guided(ts)
             self._check_fuel(ts)
             # Feed the auto-tuner if one is running (it drives the fan relay).
@@ -2206,7 +2455,8 @@ class HeaterMeterService:
                         self.state.status.to_dict(), self.state.version,
                         targets=self._mqtt_targets(),
                         unit=(self.state.pid.get("units") or None),
-                        extras=self._mqtt_extras(ts))
+                        extras=self._mqtt_extras(ts),
+                        names=self._mqtt_names())
                 except Exception:
                     pass
 
@@ -2288,18 +2538,16 @@ class HeaterMeterService:
     # its target (the "almost done" heads-up, distinct from the at-target alarm).
     ETA_NOTIFY_SEC = 15 * 60
 
-    def _check_eta_push(self, ts: float) -> None:
-        """Predict each targeted food probe's time-to-target and push a one-time
-        'almost done' heads-up when it drops within ETA_NOTIFY_SEC. Throttled."""
-        cfg = self.notify_effective_config()
-        if not (cfg.get("enabled") and cfg.get("topic")):
+    def _refresh_predictions(self, ts: float) -> None:
+        """Recompute + cache each targeted food probe's time-to-target so the
+        MQTT 'predicted done' sensors and the cook report always have a fresh
+        value. Runs regardless of whether push notifications are configured (the
+        push heads-up is a separate, opt-in concern). Throttled to every 30s."""
+        if (ts - self._last_pred_refresh) < 30:
             return
-        if (ts - self._last_eta_check) < 30:   # predict at most every 30s
-            return
-        self._last_eta_check = ts
+        self._last_pred_refresh = ts
         from . import predict
         al = self.state.alarms or []
-        names = self.state.probe_names or ["Pit", "Food 1", "Food 2", "Ambient"]
         st = self.state.status
         env = st.pit if isinstance(st.pit, (int, float)) else st.set_point
         window = 900.0
@@ -2311,11 +2559,12 @@ class HeaterMeterService:
             except (TypeError, ValueError):
                 target = None
             if target is None or target < 0:
-                self._eta_notified.discard(channel)
+                self.last_predictions.pop(channel, None)   # no target -> no ETA
                 continue
             cur = self._probe_temp(probe)
             if isinstance(cur, (int, float)) and cur >= target:
-                self._eta_notified.discard(channel)   # already there; alarm covers it
+                # Already at/over target; the alarm covers it. Drop any stale ETA.
+                self.last_predictions.pop(channel, None)
                 continue
             try:
                 tss, vals = self.store.recent_series(channel, max(window * 2, 3600), ts)
@@ -2323,12 +2572,10 @@ class HeaterMeterService:
                 continue
             p = predict.predict(tss, vals, target, env_temp=env, window_seconds=window)
             eta = p.eta_seconds
-            # Cache for the MQTT "Predicted Done" sensor (and anything else that
-            # wants the latest prediction without recomputing).
             done_at = (ts + eta) if eta is not None else None
             self.last_predictions[channel] = {
                 "ts": ts, "eta": eta, "confidence": p.confidence,
-                "done_at": done_at,
+                "target": target, "done_at": done_at,
             }
             # Log the forecast to the timeline every ~10 min so the cook report
             # can show prediction-vs-actual afterwards. These events are data,
@@ -2339,14 +2586,34 @@ class HeaterMeterService:
                     self._pred_logged[channel] = ts
                     self._record_event(ts, "prediction", channel=channel,
                                        value=done_at)
+
+    def _check_eta_push(self, ts: float) -> None:
+        """Push a one-time 'almost done' heads-up when a probe's cached ETA drops
+        within ETA_NOTIFY_SEC. Reads the predictions cached by
+        :meth:`_refresh_predictions`; only the push itself needs ntfy."""
+        cfg = self.notify_effective_config()
+        if not (cfg.get("enabled") and cfg.get("topic")):
+            return
+        names = self.state.probe_names or ["Pit", "Food 1", "Food 2", "Ambient"]
+        for probe, channel in ((1, "food1"), (2, "food2"), (3, "ambient")):
+            p = self.last_predictions.get(channel)
+            if not p:
+                # No target, or already at target: allow a fresh heads-up later.
+                self._eta_notified.discard(channel)
+                continue
+            eta = p.get("eta")
+            conf = p.get("confidence")
             if eta is not None and 0 < eta <= self.ETA_NOTIFY_SEC \
-                    and p.confidence in ("low", "medium", "high"):
+                    and conf in ("low", "medium", "high"):
                 if channel not in self._eta_notified:
                     self._eta_notified.add(channel)
                     name = names[probe] if probe < len(names) else channel
                     mins = max(1, round(eta / 60))
+                    target = p.get("target")
+                    ttxt = f"{target:.0f}°" if isinstance(target, (int, float)) \
+                        else "target"
                     self._push(f"{name} almost done",
-                               f"{name} is about {mins} min from {target:.0f}°.",
+                               f"{name} is about {mins} min from {ttxt}.",
                                priority="default", tags="hourglass_flowing_sand")
             elif eta is None or eta > self.ETA_NOTIFY_SEC * 1.5:
                 # Drifted back from the target - allow a fresh heads-up later.

@@ -151,3 +151,82 @@ def test_cooker_profiles_roundtrip():
         assert svc.delete_profile("Kamado")["ok"]
         assert svc.get_profiles() == {"profiles": [], "active": None}
         assert not svc.delete_profile("Kamado")["ok"]
+
+
+def test_smart_lid_recovery_drives_sim():
+    """End-to-end through the simulated board: a lid-open event whose recovery
+    is detected early cancels the firmware lid timer and ramps the fan back."""
+    async def scenario():
+        clock = {"t": 1000.0}
+        store = Store(":memory:")
+        # Slow interval so the only status traffic is what we feed deterministically.
+        link = SimLink(setpoint=225.0, interval=30.0, seed=1)
+        svc = HeaterMeterService(link, store, time_fn=lambda: clock["t"])
+        await svc.start()
+        # Config is loaded in start(); set it after so the test values stick.
+        svc._lidrecovery.set_config({"enabled": True, "recover_delta": 4.0,
+                                     "start_pct": 15, "ramp_secs": 60,
+                                     "min_armed_secs": 5})
+        # Put the simulated board into a real lid window so the cancel is
+        # observable on the board (240s timer -> 0 once recovery fires).
+        link.board.open_lid(20)
+        assert link.board.lid_countdown == 240.0
+
+        def feed(lid, pit, sp=225):
+            svc._on_line(protocol.frame(
+                f"HMSU,{sp},{pit},,,,0,0,{lid},0,0"))
+
+        # Lid opens; pit dives while open (firmware lid timer counting down).
+        clock["t"] = 1000; feed(240, 225)
+        clock["t"] = 1002; feed(238, 218)
+        clock["t"] = 1004; feed(236, 211)
+        clock["t"] = 1006; feed(234, 207)
+        clock["t"] = 1008; feed(232, 205)   # the low point
+        clock["t"] = 1010; feed(230, 207)   # +2 off low: below recover_delta
+        clock["t"] = 1012; feed(228, 210)   # +5 off low, armed >= 5s -> recovery
+
+        # The service cancelled the firmware lid window and dropped the board to
+        # a gentle manual fan output to start heating again immediately.
+        assert link.board.lid_countdown == 0.0
+        assert link.board.manual is True
+        assert link.board.output == 15.0
+
+        # Drive the ramp: lid now clear, pit climbing but still under setpoint.
+        for t in range(1014, 1082, 2):
+            clock["t"] = t; feed(0, 211)
+
+        # Ramp complete -> handed back to PID auto at the original setpoint.
+        assert link.board.manual is False
+        assert link.board.setpoint == 225.0
+
+        await svc.stop()
+
+    asyncio.run(scenario())
+
+
+def test_smart_lid_recovery_disabled_leaves_board_alone():
+    """With the feature off, the service never touches the lid timer or fan."""
+    async def scenario():
+        clock = {"t": 2000.0}
+        store = Store(":memory:")
+        link = SimLink(setpoint=225.0, interval=30.0, seed=1)
+        svc = HeaterMeterService(link, store, time_fn=lambda: clock["t"])
+        await svc.start()
+        svc._lidrecovery.set_config({"enabled": False})   # after start() loads it
+        link.board.open_lid(20)   # board now in a 240s lid window
+
+        def feed(lid, pit, sp=225):
+            svc._on_line(protocol.frame(
+                f"HMSU,{sp},{pit},,,,0,0,{lid},0,0"))
+
+        clock["t"] = 2000; feed(240, 225)
+        clock["t"] = 2008; feed(232, 205)
+        clock["t"] = 2012; feed(228, 215)   # would recover if enabled
+
+        # No cancel, no manual override: the firmware timer is left to run.
+        assert link.board.lid_countdown == 240.0
+        assert link.board.manual is False
+
+        await svc.stop()
+
+    asyncio.run(scenario())

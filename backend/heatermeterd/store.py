@@ -267,6 +267,15 @@ class Store:
             )
             self.conn.commit()
 
+    def last_sample(self, session_id: int):
+        """Return the most recent sample row for a session, or None."""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT * FROM samples WHERE session_id=? ORDER BY ts DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def open_session(self):
         """Return the currently-open session row (ended_ts IS NULL) or None."""
         with self.lock:

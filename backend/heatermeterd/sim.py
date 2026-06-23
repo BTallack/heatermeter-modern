@@ -43,13 +43,47 @@ class SimBoard:
             "servo_active_ceil": 100,
         }
         self.lid = {"offset": 6, "duration": 240}
+        # Live lid-open state. The real firmware starts a countdown and cuts the
+        # fan when it detects the lid opening; modelled here so smart lid recovery
+        # is demoable in the emulator.
+        self.lid_countdown = 0.0       # firmware lid timer remaining (s)
+        self.lid_open_remaining = 0.0  # physical lid-open time remaining (s)
         # Per-probe coefficients (a, b, c, r) and type; only tracked so the
         # /set?pcN= round-trip is observable in tests.
         self.probe_coeffs = [None, None, None, None]
         self.probe_types = [1, 1, 1, 1]
 
+    def open_lid(self, open_secs: float = 20.0) -> None:
+        """Simulate lifting the lid: the firmware starts its lid timer and cuts
+        the fan. The pit plummets while the lid is open, then recovers on the
+        coals' residual heat once it is closed - the signal smart lid recovery
+        keys off to resume the fan early."""
+        self.lid_open_remaining = float(open_secs)
+        self.lid_countdown = float(self.lid["duration"])
+
     def step(self, dt: float = 1.0) -> None:
         self.t += dt
+
+        if self.lid_countdown > 0:
+            # Firmware lid window: the fan is held off the whole time.
+            self.lid_countdown = max(0.0, self.lid_countdown - dt)
+            self.output = 0.0
+            self.output_avg += (0.0 - self.output_avg) * 0.1
+            if self.lid_open_remaining > 0:
+                # Lid physically open: rapid heat loss to the outside.
+                self.lid_open_remaining = max(0.0, self.lid_open_remaining - dt)
+                self.pit -= 7.0 * dt + self.rng.uniform(-0.3, 0.3)
+            else:
+                # Lid closed, fan still idle: trapped residual heat re-warms the
+                # grate toward the setpoint - a gentle recovery.
+                gap = self.setpoint - self.pit
+                self.pit += max(0.0, gap) * 0.06 * dt + self.rng.uniform(-0.2, 0.2)
+            self.food1 += ((self.pit - 40.0) - self.food1) * 0.01 * dt
+            self.ambient += self.rng.uniform(-0.2, 0.2)
+            self.fan = 0.0
+            self.servo = 0.0
+            return
+
         err = self.setpoint - self.pit
 
         if not self.manual:
@@ -87,7 +121,7 @@ class SimBoard:
             n(self.ambient),
             f"{self.output:.0f}",
             f"{self.output_avg:.0f}",
-            "0",                      # lid open countdown
+            f"{int(self.lid_countdown)}",   # lid open countdown
             f"{self.fan:.0f}",
             f"{self.servo:.0f}",
         ])
@@ -187,6 +221,13 @@ class SimBoard:
                     self.lid["offset"] = int(float(vals[0]))
                 if len(vals) > 1 and vals[1].strip() != "":
                     self.lid["duration"] = int(float(vals[1]))
+                # Third field is the live countdown; /set?ld=,,0 cancels the lid
+                # window (what lid_open_cancel() / smart recovery sends).
+                if len(vals) > 2 and vals[2].strip() != "":
+                    cd = int(float(vals[2]))
+                    self.lid_countdown = float(cd)
+                    if cd == 0:
+                        self.lid_open_remaining = 0.0
             except ValueError:
                 pass
         elif line.startswith("/set?pc"):

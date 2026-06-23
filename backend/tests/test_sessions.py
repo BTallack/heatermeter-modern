@@ -150,3 +150,72 @@ def test_repeat_cook_and_insights():
     sid2 = svc.store.start_session(5000.0)
     svc.store.close_session(sid2, 5001.0)
     assert not svc.repeat_cook(sid2)["ok"]
+
+
+def test_resume_active_cook_after_restart():
+    """Power blip mid-cook: a session with a setpoint at the last sample is
+    resumed (data stays continuous)."""
+    import asyncio
+    from heatermeterd.links import SimLink
+    from heatermeterd.service import HeaterMeterService
+
+    store = Store(":memory:")
+    sid = store.start_session(1000.0)
+    store.insert(Status(set_point=225, pit=210), 1000.0, session_id=sid)
+    store.insert(Status(set_point=225, pit=215), 1060.0, session_id=sid)
+
+    svc = HeaterMeterService(SimLink(interval=10.0), store)
+
+    async def go():
+        await svc.start()
+        assert svc.session_id == sid          # resumed the active cook
+        assert store.open_session()["id"] == sid
+        await svc.stop()
+    asyncio.run(go())
+
+
+def test_idle_session_not_resumed_starts_fresh():
+    """Unplugged-while-idle then moved: the old session is closed (data kept)
+    and the next sample starts a brand-new cook."""
+    import asyncio
+    from heatermeterd import protocol
+    from heatermeterd.links import SimLink
+    from heatermeterd.service import HeaterMeterService
+
+    store = Store(":memory:")
+    old = store.start_session(1000.0)
+    # Last sample had no setpoint -> cooker was idle/off when power was lost.
+    store.insert(Status(set_point=None, pit=72), 1000.0, session_id=old)
+    store.insert(Status(set_point=None, pit=70), 1060.0, session_id=old)
+
+    svc = HeaterMeterService(SimLink(interval=10.0), store)
+
+    async def go():
+        await svc.start()
+        assert svc.session_id is None              # did NOT resume the idle one
+        assert store.get_session(old)["ended_ts"] is not None   # closed, data kept
+        # First sample on the new grill starts a fresh session.
+        svc._on_line(protocol.frame("HMSU,225,210,,,,0,0,0,0,0,2"))
+        assert svc.session_id is not None and svc.session_id != old
+        assert store.last_sample(old) is not None   # old data preserved
+        await svc.stop()
+    asyncio.run(go())
+
+
+def test_manual_fan_session_is_resumed():
+    """A negative (manual-fan) setpoint counts as an active cook -> resumed."""
+    import asyncio
+    from heatermeterd.links import SimLink
+    from heatermeterd.service import HeaterMeterService
+
+    store = Store(":memory:")
+    sid = store.start_session(1000.0)
+    store.insert(Status(set_point=-50, pit=200), 1000.0, session_id=sid)
+
+    svc = HeaterMeterService(SimLink(interval=10.0), store)
+
+    async def go():
+        await svc.start()
+        assert svc.session_id == sid
+        await svc.stop()
+    asyncio.run(go())

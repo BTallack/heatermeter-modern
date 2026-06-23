@@ -59,6 +59,13 @@ def _ranges(unit: str) -> dict:
 # Food probes exposed as writable target-temp numbers in HA.
 _TARGET_PROBES = [("food1", "Food 1"), ("food2", "Food 2"), ("ambient", "Ambient")]
 
+# All four probes get a name entity: a read-only sensor (the name configured in
+# HeaterMeter, handy in HA templates) plus a writable text input that renames
+# the probe on the board. The fixed Pit/Food 1/Food 2 temperature sensors above
+# keep their stable names; these expose the user-chosen labels separately.
+_NAME_PROBES = [("pit", "Pit"), ("food1", "Food 1"),
+                ("food2", "Food 2"), ("ambient", "Ambient")]
+
 
 def discovery_configs(node_id: str = "hm", version: Optional[str] = None,
                       base_topic: str = DEFAULT_BASE_TOPIC,
@@ -152,6 +159,18 @@ def discovery_configs(node_id: str = "hm", version: Optional[str] = None,
     })
     out.append((f"{discovery_prefix}/sensor/{node_id}/predicted_done/config", pdone))
 
+    # Per-probe predicted-done clocks, so HA can show each food probe's ETA (the
+    # aggregate above is just the soonest of these). Mirrors the target numbers.
+    for channel, label in _TARGET_PROBES:
+        pd = base(f"predicted_done_{channel}")
+        pd.update({
+            "name": f"{label} Predicted Done",
+            "device_class": "timestamp",
+            "value_template": f"{{{{ value_json.predicted_done_{channel} }}}}",
+            "icon": "mdi:clock-check-outline",
+        })
+        out.append((f"{discovery_prefix}/sensor/{node_id}/predicted_done_{channel}/config", pd))
+
     # Setpoint as a HA number entity (read + write).
     smin, smax, sstep = rng["sp"]
     setp = base("setpoint")
@@ -183,21 +202,51 @@ def discovery_configs(node_id: str = "hm", version: Optional[str] = None,
         })
         out.append((f"{discovery_prefix}/number/{node_id}/target_{channel}/config", tgt))
 
+    # Per-probe names: a read-only sensor (the label set in HeaterMeter, for use
+    # in HA templates) and a writable text input that renames the probe on the
+    # board. The temperature sensors above keep their fixed Pit/Food 1/Food 2
+    # names so history is stable; these carry the user's chosen labels.
+    for channel, default in _NAME_PROBES:
+        nsensor = base(f"name_{channel}")
+        nsensor.update({
+            "name": f"{default} Label",
+            "value_template": f"{{{{ value_json.name_{channel} }}}}",
+            "icon": "mdi:tag-text-outline",
+        })
+        out.append((f"{discovery_prefix}/sensor/{node_id}/name_{channel}/config",
+                    nsensor))
+
+        ntext = base(f"setname_{channel}")
+        ntext.update({
+            "name": f"{default} Name",
+            "command_topic": f"{base_topic}/{node_id}/name/{channel}/set",
+            "value_template": f"{{{{ value_json.name_{channel} }}}}",
+            "max": 13,                 # board EEPROM caps probe names at 13 chars
+            "icon": "mdi:rename-box",
+        })
+        out.append((f"{discovery_prefix}/text/{node_id}/setname_{channel}/config",
+                    ntext))
+
     return out
 
 
 def state_payload(status: dict, targets: Optional[dict] = None,
-                  extras: Optional[dict] = None) -> dict:
+                  extras: Optional[dict] = None,
+                  names: Optional[dict] = None) -> dict:
     """Flatten a status dict into the JSON HA reads via value_template.
 
     *targets* maps food1/food2/ambient -> target temperature (or None).
     *extras* carries the cook-intelligence fields: ``stalled`` (bool),
-    ``fuel_low`` (bool), ``predicted_done`` (ISO-8601 timestamp or None)."""
+    ``fuel_low`` (bool), ``predicted_done`` (soonest ISO-8601 timestamp or None),
+    and ``predicted_done_by`` (per-channel ISO-8601 map).
+    *names* maps pit/food1/food2/ambient -> the probe label set on the board."""
     def num(v):
         return v if isinstance(v, (int, float)) else None
     lid = status.get("lid_countdown") or 0
     targets = targets or {}
     extras = extras or {}
+    names = names or {}
+    pdone_by = extras.get("predicted_done_by") or {}
     return {
         "set_point": num(status.get("set_point")),
         "pit": num(status.get("pit")),
@@ -214,6 +263,13 @@ def state_payload(status: dict, targets: Optional[dict] = None,
         "stalled": "true" if extras.get("stalled") else "false",
         "fuel_low": "true" if extras.get("fuel_low") else "false",
         "predicted_done": extras.get("predicted_done"),
+        "predicted_done_food1": pdone_by.get("food1"),
+        "predicted_done_food2": pdone_by.get("food2"),
+        "predicted_done_ambient": pdone_by.get("ambient"),
+        "name_pit": names.get("pit") or "Pit",
+        "name_food1": names.get("food1") or "Food 1",
+        "name_food2": names.get("food2") or "Food 2",
+        "name_ambient": names.get("ambient") or "Ambient",
     }
 
 
@@ -231,6 +287,7 @@ class MqttBridge:
                  discovery_prefix: str = DEFAULT_DISCOVERY_PREFIX,
                  on_setpoint: Optional[Callable[[float], None]] = None,
                  on_target: Optional[Callable[[str, float], None]] = None,
+                 on_name: Optional[Callable[[str, str], None]] = None,
                  unit: str = "F", client=None) -> None:
         self.host = host
         self.port = port
@@ -241,6 +298,7 @@ class MqttBridge:
         self.discovery_prefix = discovery_prefix
         self.on_setpoint = on_setpoint
         self.on_target = on_target           # (channel, value) when HA writes a target
+        self.on_name = on_name               # (channel, text) when HA renames a probe
         self.unit = unit or "F"
         self._client = client
         self._connected = False
@@ -265,6 +323,9 @@ class MqttBridge:
 
     def target_command_topic(self, channel: str) -> str:
         return f"{self.base_topic}/{self.node_id}/target/{channel}/set"
+
+    def name_command_topic(self, channel: str) -> str:
+        return f"{self.base_topic}/{self.node_id}/name/{channel}/set"
 
     def _make_client(self):
         import paho.mqtt.client as mqtt  # lazy
@@ -315,6 +376,8 @@ class MqttBridge:
         client.subscribe(self.setpoint_command_topic)
         for channel, _name in _TARGET_PROBES:
             client.subscribe(self.target_command_topic(channel))
+        for channel, _name in _NAME_PROBES:
+            client.subscribe(self.name_command_topic(channel))
         client.publish(self.availability_topic, "online", retain=True)
         self.publish_discovery()
 
@@ -337,6 +400,11 @@ class MqttBridge:
                     except (ValueError, TypeError):
                         pass
                     return
+        if self.on_name:
+            for channel, _name in _NAME_PROBES:
+                if msg.topic == self.name_command_topic(channel):
+                    self.on_name(channel, str(payload))
+                    return
 
     # publishing ----------------------------------------------------------
 
@@ -349,7 +417,8 @@ class MqttBridge:
     def publish_state(self, status: dict, version: Optional[str] = None,
                       targets: Optional[dict] = None,
                       unit: Optional[str] = None,
-                      extras: Optional[dict] = None) -> None:
+                      extras: Optional[dict] = None,
+                      names: Optional[dict] = None) -> None:
         republish = False
         if version and version != self.version:
             self.version = version
@@ -361,8 +430,9 @@ class MqttBridge:
             self.publish_discovery()
         if self._client is None:
             return
-        self._client.publish(self.state_topic,
-                             json.dumps(state_payload(status, targets, extras)))
+        self._client.publish(
+            self.state_topic,
+            json.dumps(state_payload(status, targets, extras, names)))
 
     def publish_availability(self, online: bool) -> None:
         if self._client is None:

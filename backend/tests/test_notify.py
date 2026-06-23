@@ -98,10 +98,11 @@ def test_eta_push_when_almost_done():
     last_ts = _rising_food1(svc, target=200.0, last=198.0)
     pushes = []
     svc._push = lambda *a, **k: pushes.append(a)
+    svc._refresh_predictions(last_ts + 1)           # caches the ETA (ntfy-agnostic)
     svc._check_eta_push(last_ts + 1)
     assert len(pushes) == 1                         # fired once, almost done
     assert "almost done" in pushes[0][0].lower()
-    svc._check_eta_push(last_ts + 5)                # throttled + already notified
+    svc._check_eta_push(last_ts + 5)                # already notified -> deduped
     assert len(pushes) == 1
 
 
@@ -112,5 +113,6 @@ def test_eta_push_skips_without_target():
     svc.store.recent_series = lambda col, secs, now: ([], [])
     pushes = []
     svc._push = lambda *a, **k: pushes.append(a)
+    svc._refresh_predictions(1000.0)
     svc._check_eta_push(1000.0)
     assert pushes == []

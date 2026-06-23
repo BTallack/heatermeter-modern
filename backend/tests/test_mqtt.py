@@ -57,8 +57,11 @@ class FakeClient:
 def test_discovery_configs_shape():
     cfgs = mqtt.discovery_configs(node_id="hm", version="20210203B")
     topics = [t for t, _ in cfgs]
-    # 4 temp sensors + fan + lid binary + setpoint number + 3 target numbers = 10.
-    assert len(cfgs) == 13   # +stalled, fuel_low, predicted_done
+    # 4 temp sensors + fan + lid binary + setpoint number + 3 target numbers = 10,
+    # +3 intelligence (stalled, fuel_low, predicted_done) = 13,
+    # +3 per-probe predicted_done sensors = 16,
+    # +4 name sensors + 4 name text entities = 24.
+    assert len(cfgs) == 24
     assert any("/sensor/hm/pit/config" in t for t in topics)
     assert any("/binary_sensor/hm/lid/config" in t for t in topics)
     assert any("/number/hm/setpoint/config" in t for t in topics)
@@ -135,10 +138,10 @@ def test_bridge_connect_publishes_discovery_and_availability():
     bridge.connect()
     fake.fire_connect()
 
-    # availability online + discovery for all 10 entities published retained.
+    # availability online + discovery for all 24 entities published retained.
     assert (bridge.availability_topic, "online", True) in fake.published
     discovery_pubs = [p for p in fake.published if "/config" in p[0]]
-    assert len(discovery_pubs) == 13
+    assert len(discovery_pubs) == 24
     assert all(retain for _, _, retain in discovery_pubs)
     # subscribed to the setpoint command topic.
     assert bridge.setpoint_command_topic in fake.subscribed
@@ -207,3 +210,75 @@ def test_state_payload_intelligence_extras():
     # Defaults without extras: off/None.
     p2 = state_payload({"pit": 225.0})
     assert p2["stalled"] == "false" and p2["predicted_done"] is None
+
+
+def test_per_probe_predicted_done_sensors_and_payload():
+    cfgs = dict(mqtt.discovery_configs(node_id="hm"))
+    # Each food channel gets its own predicted-done timestamp sensor.
+    for channel in ("food1", "food2", "ambient"):
+        s = [cfg for t, cfg in cfgs.items()
+             if t.endswith(f"/sensor/hm/predicted_done_{channel}/config")]
+        assert len(s) == 1, f"missing predicted_done sensor for {channel}"
+        assert s[0]["device_class"] == "timestamp"
+        assert s[0]["value_template"] == \
+            f"{{{{ value_json.predicted_done_{channel} }}}}"
+    # state_payload threads the per-channel map; absent channels stay None.
+    p = mqtt.state_payload(
+        {"pit": 225.0},
+        extras={"predicted_done": "2026-06-10T16:45:00-06:00",
+                "predicted_done_by": {"food1": "2026-06-10T16:45:00-06:00",
+                                      "food2": "2026-06-10T18:10:00-06:00"}})
+    assert p["predicted_done_food1"].startswith("2026-06-10T16:45")
+    assert p["predicted_done_food2"].startswith("2026-06-10T18:10")
+    assert p["predicted_done_ambient"] is None
+    # No map at all -> all per-channel keys are None (HA shows "unknown").
+    p2 = mqtt.state_payload({"pit": 225.0})
+    assert p2["predicted_done_food1"] is None
+    assert p2["predicted_done_food2"] is None
+
+
+def test_name_entities_present_sensor_and_text():
+    cfgs = dict(mqtt.discovery_configs(node_id="hm"))
+    # Each probe gets a read-only label sensor and a writable text entity.
+    for channel in ("pit", "food1", "food2", "ambient"):
+        s = [cfg for t, cfg in cfgs.items()
+             if t.endswith(f"/sensor/hm/name_{channel}/config")]
+        assert len(s) == 1, f"missing name sensor for {channel}"
+        assert s[0]["value_template"] == f"{{{{ value_json.name_{channel} }}}}"
+        assert "command_topic" not in s[0]   # read-only
+
+        t = [cfg for top, cfg in cfgs.items()
+             if top.endswith(f"/text/hm/setname_{channel}/config")]
+        assert len(t) == 1, f"missing name text entity for {channel}"
+        assert t[0]["command_topic"].endswith(f"/name/{channel}/set")
+        assert t[0]["value_template"] == f"{{{{ value_json.name_{channel} }}}}"
+        assert t[0]["max"] == 13
+
+
+def test_state_payload_carries_names_with_defaults():
+    # No names -> stable defaults so HA templates never see blanks.
+    p = mqtt.state_payload({"pit": 200})
+    assert p["name_pit"] == "Pit"
+    assert p["name_food1"] == "Food 1"
+    assert p["name_food2"] == "Food 2"
+    assert p["name_ambient"] == "Ambient"
+    # Supplied names win; missing channels fall back to defaults.
+    p2 = mqtt.state_payload(
+        {"pit": 200},
+        names={"pit": "Smoker", "food1": "Brisket", "food2": "", "ambient": None})
+    assert p2["name_pit"] == "Smoker"
+    assert p2["name_food1"] == "Brisket"
+    assert p2["name_food2"] == "Food 2"     # blank -> default
+    assert p2["name_ambient"] == "Ambient"  # None -> default
+
+
+def test_bridge_name_command_invokes_callback():
+    got = {}
+    fake = FakeClient()
+    bridge = mqtt.MqttBridge("localhost", client=fake, node_id="hm",
+                             on_name=lambda ch, v: got.update(ch=ch, v=v))
+    bridge.connect()
+    fake.fire_connect()
+    assert bridge.name_command_topic("food1") in fake.subscribed
+    fake.fire_message(bridge.name_command_topic("food2"), b"Pork Butt")
+    assert got == {"ch": "food2", "v": "Pork Butt"}

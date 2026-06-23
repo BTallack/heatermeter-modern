@@ -50,6 +50,9 @@
   let blowerSel = $state('');
 
   let lid = $state({ offset_percent: '', duration_seconds: '', active: true });
+  // Smart lid recovery: shorten the fixed lid-open wait once the pit recovers.
+  let lidRec = $state({ enabled: true, recover_delta: 4, start_pct: 15,
+                        ramp_secs: 60, min_armed_secs: 5 });
 
   let lcd = $state({ backlight: 255, home_mode: 255, leds: [0, 0, 0, 0], inv: [false, false, false, false] });
   let homeRotate = $state(5);   // LCD probe rotation interval (seconds)
@@ -170,6 +173,7 @@
     try { Object.assign(mqtt, await getJSON('mqtt')); mqtt.password = ''; } catch (_) {}
     try { Object.assign(notify, await getJSON('notify')); notify.token = ''; } catch (_) {}
     try { tuneStatus = await getJSON('autotune'); pollTuneIfRunning(); } catch (_) {}
+    try { Object.assign(lidRec, await getJSON('lid-recovery')); } catch (_) {}
   }
 
   async function refreshStatus() {
@@ -290,6 +294,20 @@
       flash('Lid detection saved');
       refreshStatus();
     } catch (e) { flash('Lid save failed', false); }
+  }
+
+  async function saveLidRecovery() {
+    try {
+      const r = await postJSON('lid-recovery', {
+        enabled: lidRec.enabled,
+        recover_delta: Number(lidRec.recover_delta),
+        start_pct: Number(lidRec.start_pct),
+        ramp_secs: Number(lidRec.ramp_secs),
+        min_armed_secs: Number(lidRec.min_armed_secs),
+      });
+      Object.assign(lidRec, r);
+      flash('Smart recovery saved');
+    } catch (e) { flash('Smart recovery save failed', false); }
   }
 
   async function saveLcd() {
@@ -957,6 +975,21 @@
       </div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={lid.active} /> Lid detection enabled</label>
       <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLid}>Save Lid Detection</button>
+
+      <div class="pt-3 mt-1 border-t border-neutral-300 dark:border-neutral-700 space-y-3">
+        <div>
+          <div class="font-semibold text-sm">Smart recovery</div>
+          <p class="text-xs opacity-60">Normally the fan stays off for the full lid timer above. Smart recovery watches the pit and, as soon as it climbs back after the lid closes, resumes heating early. The fan starts gently and ramps up so the pit does not overshoot.</p>
+        </div>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={lidRec.enabled} /> Resume early when the pit recovers</label>
+        <div class="grid grid-cols-2 gap-2" class:opacity-50={!lidRec.enabled}>
+          <div><label class="block text-xs opacity-60 mb-1">Recovery rise (°)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.recover_delta} /></div>
+          <div><label class="block text-xs opacity-60 mb-1">Start fan %</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.start_pct} /></div>
+          <div><label class="block text-xs opacity-60 mb-1">Ramp to full (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.ramp_secs} /></div>
+          <div><label class="block text-xs opacity-60 mb-1">Settle delay (s)</label><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.min_armed_secs} /></div>
+        </div>
+        <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLidRecovery}>Save Smart Recovery</button>
+      </div>
     </div>
   </details>
 

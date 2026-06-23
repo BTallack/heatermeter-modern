@@ -41,7 +41,11 @@
   let notes = $state([]);
   let events = $state([]);   // auto timeline events (lid/stall/target/setpoint/...)
   let sessions = $state([]);
-  let rangeMin = $state(120);
+  // Range can be the current cook ('cook'), a trailing window in minutes, or
+  // all history (0). Defaults to the live cook so readings from before the
+  // unit was moved/restarted don't muddy what you're looking at right now.
+  let rangeMin = $state('cook');
+  let sessionId = $state(null);   // current session id (from status / WS)
   let compareSel = $state('');
 
   // note dialog
@@ -229,8 +233,14 @@
     if (chart) chart.setData(data);
   }
 
+  function rangeQuery() {
+    // "This cook" scopes to the live session; with nothing cooking, fall back
+    // to a recent window rather than dumping all of history.
+    if (rangeMin === 'cook') return sessionId ? `?session_id=${sessionId}` : '?minutes=120';
+    return Number(rangeMin) > 0 ? `?minutes=${rangeMin}` : '';
+  }
   async function loadHistory() {
-    const q = rangeMin && rangeMin > 0 ? `?minutes=${rangeMin}` : '';
+    const q = rangeQuery();
     try { setData(await getJSON(`history${q}`)); } catch (_) {}
     try { notes = await getJSON('notes'); if (chart) chart.redraw(); } catch (_) {}
     try { events = await getJSON(`events${q}`); if (chart) chart.redraw(); } catch (_) {}
@@ -260,8 +270,12 @@
 
   onMount(() => {
     makeChart();
-    loadHistory(); loadSessions();
-    getJSON('status').then((s) => updateTargets(s.alarms || [])).catch(() => {});
+    getJSON('status').then((s) => {
+      sessionId = s.session_id ?? null;
+      updateTargets(s.alarms || []);
+      loadHistory();
+    }).catch(() => loadHistory());
+    loadSessions();
     ro = new ResizeObserver(() => chart && chart.setSize({ width: chartEl.clientWidth || 600, height: 330 }));
     ro.observe(chartEl);
     stop = connectWs((m) => {
@@ -271,6 +285,12 @@
         return;
       }
       if (!m.state) return;
+      // A new cook started (e.g. auto-new-session after a restart): when we're
+      // scoped to the current cook, reload so stale data drops away.
+      if (m.session_id != null && m.session_id !== sessionId) {
+        sessionId = m.session_id;
+        if (rangeMin === 'cook') { loadHistory(); return; }
+      }
       if (m.state.status) pushPoint(m.ts || (Date.now() / 1000), m.state.status);
       if (m.state.alarms) updateTargets(m.state.alarms);
     });
@@ -281,6 +301,7 @@
 <div class={embedded ? 'space-y-4' : 'px-4 pt-4 pb-28 lg:pb-10 max-w-xl lg:max-w-5xl mx-auto space-y-4'}>
   <div class="flex items-center gap-2 flex-wrap text-sm">
     <select class="hm-card rounded-lg px-2 h-10" bind:value={rangeMin} onchange={loadHistory}>
+      <option value={'cook'}>This cook</option>
       <option value={30}>30 min</option>
       <option value={120}>2 hours</option>
       <option value={360}>6 hours</option>
