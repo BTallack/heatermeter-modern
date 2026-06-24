@@ -42,6 +42,24 @@
   }
   function onVisibility() { syncWakeLock(); }
   let stop;
+
+  // Elapsed cook time, from the active session's start (durable across reloads).
+  const isCooking = $derived([0, 1, 2].includes(status.pid_mode));
+  let cookStartTs = $state(null);
+  let cookStartTimer;
+  async function refreshCookStart() {
+    try {
+      const ss = await getJSON('sessions');
+      const a = ss.find((s) => !s.ended_ts && !s.completed_ts);
+      cookStartTs = a ? a.started_ts : null;
+    } catch (_) {}
+  }
+  function cookElapsed() {
+    if (!cookStartTs) return '';
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - cookStartTs));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  }
   // Next unfired milestone's prompt = "what to expect next" on the strip.
   const guidedNext = $derived(
     guided?.milestones?.find((m) => !m.fired)?.prompt || null);
@@ -79,6 +97,8 @@
     try { meat = (await getJSON('presets')).meat || []; } catch (_) {}
     refreshEtas();
     etaTimer = setInterval(refreshEtas, 25000);
+    refreshCookStart();
+    cookStartTimer = setInterval(refreshCookStart, 60000);
     stop = connectWs((m) => {
       if (m.state) apply(m);
       if (m.event?.type === 'probe_event') {
@@ -89,7 +109,7 @@
       }
     });
   });
-  onDestroy(() => { stop && stop(); clearInterval(etaTimer); window.removeEventListener('hm-prefs', readPrefs); document.removeEventListener('visibilitychange', onVisibility); if (wakeLock) { try { wakeLock.release(); } catch (_) {} } });
+  onDestroy(() => { stop && stop(); clearInterval(etaTimer); clearInterval(cookStartTimer); window.removeEventListener('hm-prefs', readPrefs); document.removeEventListener('visibilitychange', onVisibility); if (wakeLock) { try { wakeLock.release(); } catch (_) {} } });
 
   const fmt = (v) => (v == null || Number.isNaN(v)) ? '--' : Math.round(v);
   function bump(n) { spInput = Math.max(0, (parseInt(spInput, 10) || 0) + n); spDirty = true; }
@@ -247,6 +267,9 @@
       <div class="flex flex-wrap gap-x-5 gap-y-1 mt-4 text-sm opacity-70 tabular-nums">
         <span>Set <b class="opacity-100">{status.set_point == null ? '—' : fmt(status.set_point) + '°'}</b></span>
         <span>Fan <b class="opacity-100">{fmt(status.fan_pct)}%</b></span>
+        {#if isCooking && cookStartTs}
+          <span>Cooking <b class="opacity-100">{cookElapsed()}</b></span>
+        {/if}
         {#if status.servo_pct != null && status.servo_pct > 0}
           <span>Servo <b class="opacity-100">{fmt(status.servo_pct)}%</b></span>
         {/if}

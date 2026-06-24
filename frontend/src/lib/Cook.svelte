@@ -76,6 +76,13 @@
   const quickTemps = [225, 250, 275, 325];
   const pitOn = $derived(Number(status.set_point) > 0);
   const liveSession = $derived(sessions.find((s) => !s.ended_ts && !s.completed_ts) || null);
+  // What's driving the current cook, surfaced in the control card so it's the
+  // single source of truth (the Guided/Program cards below still have details).
+  const cookContext = $derived(
+    guidedActive ? `Guided · ${guidedActive.label}` :
+    running ? `Program · ${prog.name || 'Running'} (stage ${(prog.stage_index ?? 0) + 1}/${prog.stage_count})` :
+    null
+  );
 
   async function startCook() {
     const v = Number(startTemp);
@@ -318,6 +325,9 @@
         {fmt(status.pit)}°<span class="text-base font-normal opacity-50"> / {fmt(status.set_point)}°{unit}</span>
       </div>
       <div class="text-xs opacity-50">{status.pid_mode_label || ''}{liveSession ? ' · ' + fmtElapsed(liveSession.started_ts) : ''}</div>
+      {#if cookContext}
+        <div class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-full bg-orange-500/15 text-orange-700 dark:text-orange-300 px-2.5 py-1">{cookContext}</div>
+      {/if}
       <div class="flex gap-2 mt-3">
         <button class="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-semibold" onclick={finishCook}>Finish cook</button>
         <button class="px-4 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-800 font-semibold" onclick={turnOffPit}>Turn off pit</button>
