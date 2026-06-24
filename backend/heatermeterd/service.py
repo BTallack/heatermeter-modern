@@ -95,6 +95,11 @@ class HeaterMeterService:
         self._setpoint_prev: Optional[float] = None
         # Per-probe high-alarm (cook target) tracker for food-target-change markers.
         self._food_target_prev: dict = {}
+        # Over-temp ("running hot") detector state: a sustained pit excursion well
+        # above the setpoint (a stuck-open damper / runaway), independent of any
+        # manual high alarm.
+        self._overtemp_since: Optional[float] = None
+        self._overtemp_active = False
         # Browser-agnostic UI prefs (e.g. welcome-banner dismissed), persisted
         # server-side so they're a property of the HeaterMeter, not the browser.
         self.uiprefs_config_path: Optional[str] = None
@@ -851,6 +856,40 @@ class HeaterMeterService:
         # target. Mark when one is set or changed (>= 1 degree) after the first
         # observation, so the graph shows "Food 1 -> 203" the moment you set it.
         self._check_target_edges(ts)
+        self._check_overtemp(ts)
+
+    _OVERTEMP_MARGIN = 40.0    # degrees over setpoint that counts as "running hot"
+    _OVERTEMP_SECS = 120.0     # must hold that long before flagging (ignore blips)
+
+    def _check_overtemp(self, ts: float) -> None:
+        """Flag a sustained pit excursion well above the setpoint (a runaway /
+        stuck-open damper), independent of any manual alarm. Records one event
+        per excursion; re-arms once the pit settles back near the setpoint."""
+        st = self.state.status
+        sp = st.set_point if isinstance(st.set_point, (int, float)) else None
+        pit = st.pit if isinstance(st.pit, (int, float)) else None
+        if sp is None or pit is None or sp <= 0:
+            self._overtemp_since = None
+            self._overtemp_active = False
+            return
+        if pit >= sp + self._OVERTEMP_MARGIN:
+            if self._overtemp_since is None:
+                self._overtemp_since = ts
+            elif (not self._overtemp_active
+                    and (ts - self._overtemp_since) >= self._OVERTEMP_SECS):
+                self._overtemp_active = True
+                self._record_event(ts, "overtemp",
+                                   label=f"Running hot {round(pit)}° (set {round(sp)}°)",
+                                   value=float(pit))
+                self._push("Pit running hot",
+                           f"Pit is {round(pit)}°, well above the {round(sp)}° "
+                           "setpoint. Check the damper/lid.",
+                           priority="high", tags="fire")
+        else:
+            self._overtemp_since = None
+            # Re-arm only after it comes back within half the margin (hysteresis).
+            if self._overtemp_active and pit <= sp + self._OVERTEMP_MARGIN * 0.5:
+                self._overtemp_active = False
 
     def _check_target_edges(self, ts: float) -> None:
         al = self.state.alarms or []

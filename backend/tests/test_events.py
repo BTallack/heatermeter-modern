@@ -102,6 +102,31 @@ def test_food_target_change_records_event():
     assert len(evs) == 2
 
 
+def test_overtemp_records_event_and_rearms():
+    svc, tt = _svc()
+    svc._push = lambda *a, **k: None                      # silence push
+    svc._on_line(_hmsu(sp="225", pit="225"))              # at temp; no overtemp
+    tt[0] += 1
+    svc._on_line(_hmsu(sp="225", pit="285"))              # 60 over -> timer starts
+    assert not [e for e in svc.store.list_events() if e["kind"] == "overtemp"]
+    tt[0] += 130
+    svc._on_line(_hmsu(sp="225", pit="288"))              # sustained > 120s -> event
+    evs = [e for e in svc.store.list_events() if e["kind"] == "overtemp"]
+    assert len(evs) == 1 and evs[0]["value"] >= 285
+    # No repeat while it stays hot.
+    tt[0] += 20
+    svc._on_line(_hmsu(sp="225", pit="290"))
+    assert len([e for e in svc.store.list_events() if e["kind"] == "overtemp"]) == 1
+    # Settles back near setpoint (re-arms), then a fresh excursion fires again.
+    tt[0] += 5
+    svc._on_line(_hmsu(sp="225", pit="230"))              # within half-margin -> re-arm
+    tt[0] += 1
+    svc._on_line(_hmsu(sp="225", pit="285"))
+    tt[0] += 130
+    svc._on_line(_hmsu(sp="225", pit="285"))
+    assert len([e for e in svc.store.list_events() if e["kind"] == "overtemp"]) == 2
+
+
 def test_probe_event_lands_on_timeline():
     svc, tt = _svc()
     svc.save_probewatch({"dropout_secs": 5, "stall_enabled": False})

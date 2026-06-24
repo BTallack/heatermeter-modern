@@ -93,11 +93,11 @@
     food_target: '#36b37e',
     setpoint: '#9aa0a6', stage: '#9aa0a6', program_done: '#9aa0a6',
     disconnect: '#ff5630', fault: '#ff5630', reconnect: '#6b9080',
-    alarm_low: '#ff8b00',
+    alarm_low: '#ff8b00', overtemp: '#ff5630',
   };
   const EVENT_CAPTIONS = {
     lid_open: 'Lid', stall_start: 'Stall', stall_end: 'Stall over',
-    target: '✓', cook_complete: 'Done', disconnect: '✕',
+    target: '✓', cook_complete: 'Done', disconnect: '✕', overtemp: 'Hot',
   };
   function eventsPlugin() {
     return { hooks: { draw: (u) => {
