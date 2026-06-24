@@ -91,3 +91,37 @@ Every initiative above is implemented, tested (244 backend tests), and deployed:
   the self-updater is host-agnostic; build an artifact + manifest and set the URL.)
 
 Remaining: flash firmware 20260610-hm4 via Settings -> Firmware (user present).
+
+## Status (2026-06-22): UX-excellence + safety phase (web UI v0.5.0 -> v0.5.3)
+
+All capability lanes were built; focus shifted to making the power *feel*
+best-in-class and adding a safety net. Shipped + deployed:
+- **Cook tab is a real lifecycle** — pinned "Cook control" card: Start a cook
+  (pit temp + quick chips) when idle; live pit/setpoint/elapsed + Finish cook +
+  Turn off pit when active; shows the active guided/program cook as a chip.
+- **Notes scope to the current cook** (were leaking across cooks); welcome banner
+  remembered server-side (`/api/ui-prefs`) not per-browser; guided-cook select
+  overflow fixed.
+- **Auto markers**: pit setpoint + **food-target changes** + **over-temp
+  ("running hot")** on the graph and report. Over-temp is an automatic relative
+  runaway detector (>40 deg over setpoint, sustained 2 min) with push + re-arm,
+  independent of any manual alarm.
+- **Dashboard** shows elapsed cook time.
+- Also shipped earlier this session: MQTT probe-name sensors + rename text
+  entities, predicted-done fix (works without ntfy) + per-probe predicted-done
+  sensors, smart lid recovery (lidrecovery.py), smart sessions (auto-new-cook on
+  idle power loss + session-scoped graph). Native **iOS app** scaffolded (full
+  SwiftUI control app, XcodeGen) — paused at the Xcode license gate, see
+  `ios/STATUS.md`.
+
+### Near-term priorities (need the user / a live cook to do well)
+1. **Serve-time planning** ("eat at 6:00" -> on track / wrap now / keep-warm),
+   built on the existing stall-aware predictor. Biggest remaining differentiator.
+2. **iOS app**: first compile (license accept) -> then APNs push + Live Activity /
+   Dynamic Island cook view (daemon `apns.py` is ready).
+3. Cook-tab grouping/reorder; over-temp threshold tuning in Settings; per-cook
+   pit-stability score vs your own history.
+
+Note: SwiftUI views + new web layouts can't be visually verified in a headless
+session, so those are done when the UI can be seen; backend/testable work proceeds
+autonomously.

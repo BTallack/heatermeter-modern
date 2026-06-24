@@ -26,9 +26,10 @@ _EVENT_COLORS = {
     "lid_open": "#ffab00", "lid_closed": "#ffab00",
     "stall_start": "#a78bfa", "stall_end": "#a78bfa",
     "target": "#36b37e", "probe_done": "#36b37e", "cook_complete": "#36b37e",
+    "food_target": "#36b37e",
     "setpoint": "#9aa0a6", "stage": "#9aa0a6", "program_done": "#9aa0a6",
     "disconnect": "#ff5630", "fault": "#ff5630", "reconnect": "#6b9080",
-    "alarm_low": "#ff8b00",
+    "alarm_low": "#ff8b00", "overtemp": "#ff5630",
 }
 
 
