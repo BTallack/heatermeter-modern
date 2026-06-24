@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 
 
 # -- request bodies ---------------------------------------------------------
