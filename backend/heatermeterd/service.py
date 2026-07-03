@@ -659,10 +659,11 @@ class HeaterMeterService:
                     if not self._lidrecovery_active:
                         self._lidrecovery_active = True
                         self._record_event(ts, "lid_recovery",
-                                           label="Lid recovery: heating resumed")
+                                           label="Lid recovery: control resumed")
                         self._push("Lid recovered",
-                                   "Pit is climbing again - resuming the fan "
-                                   "gently instead of waiting out the timer.",
+                                   "Pit is climbing again - handing back to the "
+                                   "controller early instead of waiting out the "
+                                   "lid timer.",
                                    priority="low", tags="dash")
                         self._emit({"type": "lid_recovery", "event": "start",
                                     "ts": ts})

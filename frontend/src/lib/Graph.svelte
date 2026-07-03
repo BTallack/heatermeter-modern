@@ -20,6 +20,22 @@
     { key: 'servo_pct', label: 'Servo %', stroke: '#9aa7b3', width: 1, dash: [4, 3], scale: '%' },
   ];
 
+  // Remember which series are toggled on/off across page loads + navigation.
+  // Fan/Servo default OFF (they crowd the temperature detail); toggling any
+  // series persists the choice.
+  const VIS_KEY = 'hm.graphVis';
+  function loadVis() { try { return JSON.parse(localStorage.getItem(VIS_KEY)) || {}; } catch (_) { return {}; } }
+  function initialShow(s) {
+    const v = loadVis();
+    if (v[s.label] !== undefined) return v[s.label];
+    return s.key !== 'fan_pct' && s.key !== 'servo_pct';
+  }
+  function saveVis(u) {
+    const v = loadVis();
+    u.series.forEach((s, i) => { if (i > 0 && s.label && s.label !== 'vs') v[s.label] = s.show !== false; });
+    try { localStorage.setItem(VIS_KEY, JSON.stringify(v)); } catch (_) {}
+  }
+
   let chartEl;
   let chart = null;
   let data = [[], [], [], [], [], [], [], []]; // t,set,pit,food1,food2,compare,fan,servo
@@ -27,6 +43,10 @@
   let targets = { food1: null, food2: null }; // food target temps for graph lines
   let ro = null;
   let stop;
+  // Liveness: the chart advances via the WebSocket; if that stalls (Wi-Fi drop,
+  // tab throttling) we resync from the API so it never appears frozen.
+  let lastLiveTs = 0;
+  let staleTimer, onVis;
 
   const parseAlarm = (v) => {
     const n = parseFloat(String(v ?? '').replace(/[LH]$/, ''));
@@ -172,7 +192,8 @@
       scales: { x: { time: true }, '%': { range: [0, 100] } },
       legend: { live: true },
       cursor: { drag: { x: true, y: false } },
-      plugins: [targetLinesPlugin(), eventsPlugin(), notesPlugin(), latestLegendPlugin()],
+      plugins: [targetLinesPlugin(), eventsPlugin(), notesPlugin(), latestLegendPlugin(),
+                { hooks: { setSeries: [(u) => saveVis(u)] } }],
       // x series: show time-only in the legend (no date) so the legend row
       // doesn't wrap to a second line at normal width.
       series: [{ value: (u, ts) => (ts == null ? '--' : fmtClock(ts)) }, ...SERIES.map((s) => ({
@@ -181,6 +202,7 @@
         // `|| 'y'`, uPlot creates a stray scale keyed "undefined" for the lines
         // while the 'y' axis stays empty (axis shows 0-250, lines don't match).
         label: s.label, stroke: s.stroke, width: s.width, dash: s.dash, scale: s.scale || 'y',
+        show: initialShow(s),
         spanGaps: false, points: { show: false },
         value: (u, v) => (v == null ? '--' : v.toFixed(1) + (s.scale === '%' ? '%' : '°')),
       }))],
@@ -233,6 +255,7 @@
     data[6].push(st.fan_pct); data[7].push(st.servo_pct);
     if (data[0].length > MAX_POINTS) for (const a of data) a.shift();
     if (chart) chart.setData(data);
+    lastLiveTs = Date.now() / 1000;
   }
 
   function rangeQuery() {
@@ -243,7 +266,7 @@
   }
   async function loadHistory() {
     const q = rangeQuery();
-    try { setData(await getJSON(`history${q}`)); } catch (_) {}
+    try { setData(await getJSON(`history${q}`)); lastLiveTs = Date.now() / 1000; } catch (_) {}
     // Notes + events share the graph's scope so old cooks' markers don't bleed in.
     try { notes = await getJSON(`notes${q}`); if (chart) chart.redraw(); } catch (_) {}
     try { events = await getJSON(`events${q}`); if (chart) chart.redraw(); } catch (_) {}
@@ -297,8 +320,20 @@
       if (m.state.status) pushPoint(m.ts || (Date.now() / 1000), m.state.status);
       if (m.state.alarms) updateTargets(m.state.alarms);
     });
+    // Self-heal if the live feed stalls: resync from the API when the graph has
+    // gone quiet for >15s while visible (and immediately on tab re-focus).
+    onVis = () => { if (document.visibilityState === 'visible') loadHistory(); };
+    document.addEventListener('visibilitychange', onVis);
+    staleTimer = setInterval(() => {
+      if (document.visibilityState === 'visible' && data[0].length
+          && (Date.now() / 1000 - lastLiveTs) > 15) loadHistory();
+    }, 10000);
   });
-  onDestroy(() => { if (ro) ro.disconnect(); if (chart) chart.destroy(); stop && stop(); });
+  onDestroy(() => {
+    if (ro) ro.disconnect(); if (chart) chart.destroy(); stop && stop();
+    clearInterval(staleTimer);
+    if (onVis) document.removeEventListener('visibilitychange', onVis);
+  });
 </script>
 
 <div class={embedded ? 'space-y-4' : 'px-4 pt-4 pb-28 lg:pb-10 max-w-xl lg:max-w-5xl mx-auto space-y-4'}>
