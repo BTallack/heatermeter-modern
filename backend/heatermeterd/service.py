@@ -20,7 +20,7 @@ import time
 from typing import Callable, Optional
 
 from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
-               lidrecovery, pitguard, probewatch, protocol)
+               lidrecovery, pitguard, probewatch, protocol, serveplan)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
@@ -100,6 +100,11 @@ class HeaterMeterService:
         # and the over-temp ("running hot") detector.
         self.pitguard_config_path: Optional[str] = None
         self._pitguard = pitguard.PitGuard()
+        # Serve-time plan ("dinner at 6"): compared against the prediction cache
+        # every refresh; transitions push. Per-cook - cleared on a new session.
+        self.serveplan_config_path: Optional[str] = None
+        self._serveplan_cfg: dict = serveplan.sanitize({})
+        self._serve_status_prev: Optional[str] = None
         # Browser-agnostic UI prefs (e.g. welcome-banner dismissed), persisted
         # server-side so they're a property of the HeaterMeter, not the browser.
         self.uiprefs_config_path: Optional[str] = None
@@ -199,6 +204,7 @@ class HeaterMeterService:
         self._probewatch.set_config(self._load_probewatch_file())
         self._lidrecovery.set_config(self._load_lidrecovery_file())
         self._pitguard.set_config(self._load_pitguard_file())
+        self._serveplan_cfg = self._load_serveplan_file()
         self._push_cfg = self._load_push_file()
         if existing and existing.get("completed_ts"):
             self._cookdone.mark_already_complete()
@@ -658,6 +664,110 @@ class HeaterMeterService:
                 json.dump(clean, f)
         self._pitguard.set_config(clean)
         return clean
+
+    # -- serve-time plan ("dinner at 6") ------------------------------------
+
+    def _load_serveplan_file(self) -> dict:
+        if (self.serveplan_config_path
+                and os.path.exists(self.serveplan_config_path)):
+            try:
+                with open(self.serveplan_config_path) as f:
+                    return serveplan.sanitize(json.load(f))
+            except Exception:
+                pass
+        return serveplan.sanitize({})
+
+    def save_serveplan(self, partial: dict) -> dict:
+        clean = serveplan.sanitize({**self._serveplan_cfg, **(partial or {})})
+        self._serveplan_cfg = clean
+        self._serve_status_prev = None    # fresh plan -> fresh transitions
+        if self.serveplan_config_path:
+            try:
+                os.makedirs(os.path.dirname(self.serveplan_config_path) or ".",
+                            exist_ok=True)
+                with open(self.serveplan_config_path, "w") as f:
+                    json.dump(clean, f)
+            except Exception:
+                pass
+        return clean
+
+    def clear_serveplan(self) -> dict:
+        return self.save_serveplan({"enabled": False, "serve_ts": 0})
+
+    def _any_food_target(self) -> bool:
+        al = self.state.alarms or []
+        for idx in (3, 5, 7):
+            if idx < len(al):
+                try:
+                    if float(str(al[idx]).rstrip("LH")) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    pass
+        return False
+
+    def _stalled_channels(self) -> set:
+        try:
+            return {ch for ch, s in self._probewatch._ch.items() if s.stalled}
+        except Exception:
+            return set()
+
+    def serveplan_status(self) -> Optional[dict]:
+        """Config + live assessment for the API/UI; None when no plan is set."""
+        if not self._serveplan_cfg.get("enabled"):
+            return None
+        a = serveplan.assess(self.time_fn(), self._serveplan_cfg,
+                             self.last_predictions,
+                             stalled_channels=self._stalled_channels(),
+                             any_target=self._any_food_target())
+        return {**self._serveplan_cfg, "assessment": a}
+
+    def _serve_clock(self) -> str:
+        return time.strftime("%I:%M %p", time.localtime(
+            self._serveplan_cfg.get("serve_ts") or 0)).lstrip("0")
+
+    def _drive_serveplan(self, ts: float) -> None:
+        """Runs on every prediction refresh: watch for status transitions and
+        turn them into timeline events + pushes. Best-effort."""
+        if not self._serveplan_cfg.get("enabled"):
+            return
+        a = serveplan.assess(ts, self._serveplan_cfg, self.last_predictions,
+                             stalled_channels=self._stalled_channels(),
+                             any_target=self._any_food_target())
+        st = a["status"]
+        if st == "stale":
+            self.clear_serveplan()
+            return
+        # Only the meaningful bands drive transitions; prediction hiccups
+        # (no_eta) leave the previous state alone so flapping stays silent.
+        if st not in ("late", "on_track", "early", "past"):
+            return
+        prev = self._serve_status_prev
+        self._serve_status_prev = st
+        if st == prev or prev is None and st != "late":
+            # First observation lands silently unless we're already late.
+            if st != prev:
+                self._record_event(ts, "serve_status",
+                                   label=f"Serve plan: {st.replace('_', ' ')}")
+            return
+        slack = a.get("slack_secs")
+        clock = self._serve_clock()
+        if st == "late":
+            mins = int(round(-(slack or 0) / 60))
+            self._record_event(ts, "serve_status",
+                               label=f"Running ~{mins} min late for {clock}")
+            self._push(f"Running late for {clock}",
+                       f"Ready looks ~{mins} min past serve time. "
+                       "Wrap, bump the pit, or push dinner.",
+                       priority="high", tags="alarm_clock")
+        elif st == "on_track" and prev == "late":
+            self._record_event(ts, "serve_status",
+                               label=f"Back on track for {clock}")
+            self._push(f"Back on track for {clock}",
+                       "The cook has caught back up to your serve time.",
+                       priority="default", tags="white_check_mark")
+        else:
+            self._record_event(ts, "serve_status",
+                               label=f"Serve plan: {st.replace('_', ' ')}")
 
     def _drive_lid_recovery(self, ts: float) -> None:
         """Per-HMSU: let the lid-recovery detector shorten the firmware's fixed
@@ -1322,6 +1432,8 @@ class HeaterMeterService:
         # Suppress the auto-detector so it does not also fire for this session.
         self._cookdone.mark_already_complete()
         self._on_cook_complete(self.session_id, self.time_fn(), reason="manual")
+        if self._serveplan_cfg.get("enabled"):
+            self.clear_serveplan()       # the plan served its cook
         return {"ok": True, "session_id": self.session_id}
 
     def _on_cook_complete(self, session_id: int, done_at: float,
@@ -2498,6 +2610,8 @@ class HeaterMeterService:
             self.probe_health = {}
             self._pred_logged = {}   # fresh forecast logging per cook
             self._session_completed = False
+            if self._serveplan_cfg.get("enabled"):
+                self.clear_serveplan()   # a serve time belongs to one cook
             self._emit({"type": "session_started", "session_id": self.session_id,
                         "ts": ts})
         return self.session_id
@@ -2576,6 +2690,7 @@ class HeaterMeterService:
             state_d["probe_health"] = self.probe_health
             state_d["fuel"] = self._fuel.status()
             state_d["guided"] = self.guided_status()
+            state_d["serve_plan"] = self.serveplan_status()
             self._broadcast({"ts": ts, "session_id": sid, "state": state_d})
             if self.mqtt is not None:
                 try:
@@ -2721,6 +2836,11 @@ class HeaterMeterService:
                     self._pred_logged[channel] = ts
                     self._record_event(ts, "prediction", channel=channel,
                                        value=done_at)
+        # Fresh predictions in hand: re-assess the serve-time plan.
+        try:
+            self._drive_serveplan(ts)
+        except Exception:
+            pass
 
     def _check_eta_push(self, ts: float) -> None:
         """Push a one-time 'almost done' heads-up when a probe's cached ETA drops

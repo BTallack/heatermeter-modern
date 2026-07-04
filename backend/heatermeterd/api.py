@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -169,6 +169,14 @@ class PushConfigBody(BaseModel):
     key_id: str | None = None
     key_path: str | None = None
     bundle_id: str | None = None
+
+
+class ServePlanBody(BaseModel):
+    serve_ts: float | None = None        # epoch seconds of the serve time
+    channel: str | None = None           # auto | food1 | food2 | ambient
+    rest_secs: int | None = None         # rest after the pull
+    hold_window_secs: int | None = None  # "ready this early still = on track"
+    enabled: bool | None = None
 
 
 class PitGuardBody(BaseModel):
@@ -350,6 +358,7 @@ def create_app(service) -> FastAPI:
         d["hostupdate"] = service.hostupdate_status
         d["probe_health"] = service.probe_health
         d["guided"] = service.guided_status()
+        d["serve_plan"] = service.serveplan_status()
         d["fuel"] = service.fuel_status()
         d["probe_preset_sel"] = service.get_probe_presets_sel()
         return d
@@ -612,6 +621,23 @@ def create_app(service) -> FastAPI:
         merged = {**cur, **{k: v for k, v in body.model_dump().items()
                             if v is not None}}
         return service.save_probewatch(merged)
+
+    @app.get("/api/serve-plan")
+    async def get_serve_plan():
+        return service.serveplan_status() or {"enabled": False}
+
+    @app.post("/api/serve-plan")
+    async def set_serve_plan(body: ServePlanBody):
+        partial = {k: v for k, v in body.model_dump().items() if v is not None}
+        if partial.get("serve_ts") and "enabled" not in partial:
+            partial["enabled"] = True     # setting a time turns the plan on
+        service.save_serveplan(partial)
+        return service.serveplan_status() or {"enabled": False}
+
+    @app.delete("/api/serve-plan")
+    async def clear_serve_plan():
+        service.clear_serveplan()
+        return {"ok": True, "enabled": False}
 
     @app.get("/api/pit-guard")
     async def get_pit_guard():

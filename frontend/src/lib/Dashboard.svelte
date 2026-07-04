@@ -22,6 +22,7 @@
   let health = $state({});   // channel -> 'disconnected' | 'fault' | 'ok'
   let fuelInfo = $state({}); // blower-effort fuel assessment from the daemon
   let guided = $state(null); // active guided cook (null when none)
+  let servePlan = $state(null); // serve-time plan ("dinner at 6"), null when off
 
   // Keep the screen awake while the cooker is actively running (startup,
   // recovering, or at temp). The Wake Lock API only exists in a secure
@@ -84,6 +85,7 @@
     if (d.state.probe_health) health = d.state.probe_health;
     if (d.state.fuel) fuelInfo = d.state.fuel;
     guided = d.state.guided ?? guided;
+    if ('serve_plan' in d.state) servePlan = d.state.serve_plan;
     modeLabel = status.pid_mode_label || '';
     syncWakeLock();
     if (!spDirty && typeof status.set_point === 'number') spInput = Math.round(status.set_point);
@@ -282,6 +284,21 @@
           <span class="text-amber-500">Fuel {fuelHours(fuelInfo.est_secs_to_max)}</span>
         {/if}
       </div>
+      {#if servePlan?.enabled}
+        <div class="mt-1.5 text-sm tabular-nums">
+          Dinner <b>{fmtClock(servePlan.serve_ts)}</b>
+          {#if servePlan.assessment?.status === 'late'}
+            <span class="text-red-500 font-semibold">· running late</span>
+          {:else if servePlan.assessment?.status === 'on_track'}
+            <span class="text-green-600 dark:text-green-400">· on track</span>
+          {:else if servePlan.assessment?.status === 'early'}
+            <span class="text-sky-500">· ahead</span>
+          {/if}
+          {#if servePlan.assessment?.ready_at}
+            <span class="opacity-60">· ready ~{fmtClock(servePlan.assessment.ready_at)}</span>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="mt-5">

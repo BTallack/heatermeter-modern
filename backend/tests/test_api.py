@@ -422,6 +422,29 @@ def test_notes_scoped_by_session_and_window():
         assert [n["text"] for n in recent] == ["this cook"]
 
 
+def test_serve_plan_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    from heatermeterd.api import create_app
+
+    svc = HeaterMeterService(SimLink(interval=10.0, seed=1), Store(":memory:"))
+    now = svc.time_fn()
+    app = create_app(svc)
+    with TestClient(app) as c:
+        assert c.get("/api/serve-plan").json() == {"enabled": False}
+        # Setting a serve time implicitly enables the plan; with no food target
+        # the assessment says so.
+        r = c.post("/api/serve-plan",
+                   json={"serve_ts": now + 7200, "rest_secs": 600}).json()
+        assert r["enabled"] is True and r["rest_secs"] == 600
+        assert r["assessment"]["status"] == "no_target"
+        # Clearing turns it off.
+        assert c.request("DELETE", "/api/serve-plan").json()["enabled"] is False
+        assert c.get("/api/serve-plan").json() == {"enabled": False}
+
+
 def test_pit_guard_api():
     if not HAVE_WEB:
         print("    (skipped: fastapi/httpx not installed)")

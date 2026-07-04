@@ -49,6 +49,7 @@
     status = d.state.status || {};
     names = d.state.probe_names || names;
     alarms = d.state.alarms || alarms;
+    if ('serve_plan' in d.state) servePlan = d.state.serve_plan;
     if (d.state.pid && d.state.pid.units) unit = d.state.pid.units;
     t1 = parseTarget(alarms[3]); t2 = parseTarget(alarms[5]);
     t3 = ambFood ? parseTarget(alarms[7]) : '';
@@ -98,6 +99,38 @@
     const s = Math.max(0, Math.floor(Date.now() / 1000 - startTs));
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
     return h ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  // -- serve-time plan ("dinner at 6") ---------------------------------------
+  let servePlan = $state(null);   // {enabled, serve_ts, rest_secs, assessment}
+  let serveTime = $state('');     // "HH:MM" from the time input
+  let serveRest = $state(15);     // rest minutes
+
+  const SERVE_LABELS = {
+    on_track: 'On track', late: 'Running late', early: 'Ahead of schedule',
+    no_eta: 'Waiting for a forecast…', no_target: 'Set a food target first',
+    past: 'Serve time passed',
+  };
+  const SERVE_COLORS = {
+    on_track: 'text-green-600 dark:text-green-400',
+    late: 'text-red-500 font-semibold',
+    early: 'text-sky-500',
+  };
+  async function setServe() {
+    if (!serveTime) return;
+    const [h, m] = serveTime.split(':').map(Number);
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    let ts = d.getTime() / 1000;
+    // A time already >30 min in the past means "tomorrow" (overnight cooks).
+    if (ts < Date.now() / 1000 - 1800) ts += 86400;
+    try {
+      servePlan = await postJSON('serve-plan',
+                                 { serve_ts: ts, rest_secs: Math.max(0, Number(serveRest) || 0) * 60 });
+    } catch (_) {}
+  }
+  async function clearServe() {
+    try { await delJSON('serve-plan'); } catch (_) {}
+    servePlan = null;
   }
 
   // -- cook program ----------------------------------------------------------
@@ -252,6 +285,7 @@
     try { apply({ state: await getJSON('status') }); } catch (_) {}
     try { const pr = await getJSON('presets'); meat = pr.meat || []; programPresets = pr.program || []; } catch (_) {}
     loadProgram(); loadSaved(); loadSessions(); loadTimers(); loadGuided(); loadInsights();
+    getJSON('serve-plan').then((r) => { if (r && r.enabled) servePlan = r; }).catch(() => {});
     stages = [newStage()];
     stop = connectWs((m) => {
       if (m.state) apply(m);
@@ -328,6 +362,35 @@
       {#if cookContext}
         <div class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-full bg-orange-500/15 text-orange-700 dark:text-orange-300 px-2.5 py-1">{cookContext}</div>
       {/if}
+
+      <!-- Serve-time plan -->
+      {#if servePlan?.enabled}
+        <div class="mt-3 rounded-xl bg-black/5 dark:bg-white/5 p-3">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="font-semibold">Dinner {fmtClock(servePlan.serve_ts)}</span>
+            <span class={'ml-auto ' + (SERVE_COLORS[servePlan.assessment?.status] || 'opacity-50')}>
+              {SERVE_LABELS[servePlan.assessment?.status] || '…'}
+            </span>
+            <button class="text-lg leading-none opacity-50 hover:opacity-100 px-1" onclick={clearServe} aria-label="Clear serve plan">✕</button>
+          </div>
+          {#if servePlan.assessment?.ready_at}
+            <div class="text-xs opacity-60 mt-0.5">Ready to eat ~{fmtClock(servePlan.assessment.ready_at)}{servePlan.rest_secs ? ` (incl. ${Math.round(servePlan.rest_secs / 60)} min rest)` : ''}</div>
+          {/if}
+          {#each servePlan.assessment?.advice || [] as a}
+            <div class="text-xs mt-1 opacity-80">• {a.text}</div>
+          {/each}
+        </div>
+      {:else}
+        <div class="flex items-center gap-2 mt-3">
+          <span class="text-sm opacity-70 shrink-0">Eat at</span>
+          <input class="bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 h-10" type="time" bind:value={serveTime} aria-label="Serve time" />
+          <span class="text-sm opacity-70 shrink-0">rest</span>
+          <input class="w-14 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg h-10 tabular-nums" type="number" min="0" bind:value={serveRest} aria-label="Rest minutes" />
+          <span class="text-sm opacity-50 shrink-0">min</span>
+          <button class="ml-auto px-3 h-10 rounded-lg bg-neutral-200 dark:bg-neutral-800 font-medium text-sm disabled:opacity-40" disabled={!serveTime} onclick={setServe}>Plan</button>
+        </div>
+      {/if}
+
       <div class="flex gap-2 mt-3">
         <button class="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-semibold" onclick={finishCook}>Finish cook</button>
         <button class="px-4 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-800 font-semibold" onclick={turnOffPit}>Turn off pit</button>
