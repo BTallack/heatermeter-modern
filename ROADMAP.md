@@ -114,13 +114,24 @@ best-in-class and adding a safety net. Shipped + deployed:
   SwiftUI control app, XcodeGen) — paused at the Xcode license gate, see
   `ios/STATUS.md`.
 
-### Near-term priorities (need the user / a live cook to do well)
-1. **Serve-time planning** ("eat at 6:00" -> on track / wrap now / keep-warm),
-   built on the existing stall-aware predictor. Biggest remaining differentiator.
+### Status (2026-07-04): v0.7.0 Pit Guard + v0.8.0 Serve-time planning SHIPPED
+- **Pit Guard** (v0.7.0) replaced the classic high/low alarms: setpoint-relative,
+  at-temp arming, lid/grace suppression, sustained "pit running low" warning ->
+  "fire dying" critical (fan maxed, no recovery), configurable over-temp; two new
+  HA binary sensors; optional static board-level hard limits as the beeper backstop.
+- **Serve-time planning** (v0.8.0): set "eat at 6:00" on the Cook control card ->
+  on track / ahead / running late against predicted done + rest, advice ladder
+  (wrap now when stalled, bump the pit, plan a hold), pushes on falling
+  behind/catching up, Dashboard hero line. Per-cook; auto-clears.
+- Also this session: kamado-safe lid recovery + graph series persistence +
+  graph stall self-heal (v0.6.0) after the 07-02 cook post-mortem.
+
+### Near-term priorities
+1. **Validate serve-time planning + Pit Guard on a real cook** (thresholds may
+   want tuning to the kamado's rhythm).
 2. **iOS app**: first compile (license accept) -> then APNs push + Live Activity /
-   Dynamic Island cook view (daemon `apns.py` is ready).
-3. Cook-tab grouping/reorder; over-temp threshold tuning in Settings; per-cook
-   pit-stability score vs your own history.
+   Dynamic Island cook view (daemon `apns.py` is ready). See `ios/STATUS.md`.
+3. Per-cook pit-stability score vs your own history; cook-tab grouping/reorder.
 
 Note: SwiftUI views + new web layouts can't be visually verified in a headless
 session, so those are done when the UI can be seen; backend/testable work proceeds
