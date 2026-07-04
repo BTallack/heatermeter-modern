@@ -150,6 +150,27 @@ def discovery_configs(node_id: str = "hm", version: Optional[str] = None,
     })
     out.append((f"{discovery_prefix}/binary_sensor/{node_id}/fuel_low/config", fuel_low))
 
+    # Pit Guard flags: context-aware "pit running low" warning and the
+    # "fire dying" critical (max air, pit still low). Automation gold.
+    pit_low = base("pit_low")
+    pit_low.update({
+        "name": "Pit Running Low",
+        "value_template": "{{ value_json.pit_low }}",
+        "payload_on": "true", "payload_off": "false",
+        "icon": "mdi:thermometer-chevron-down",
+    })
+    out.append((f"{discovery_prefix}/binary_sensor/{node_id}/pit_low/config", pit_low))
+
+    fire_dying = base("fire_dying")
+    fire_dying.update({
+        "name": "Fire Dying",
+        "device_class": "problem",
+        "value_template": "{{ value_json.fire_dying }}",
+        "payload_on": "true", "payload_off": "false",
+        "icon": "mdi:fire-off",
+    })
+    out.append((f"{discovery_prefix}/binary_sensor/{node_id}/fire_dying/config", fire_dying))
+
     pdone = base("predicted_done")
     pdone.update({
         "name": "Predicted Done",
@@ -262,6 +283,8 @@ def state_payload(status: dict, targets: Optional[dict] = None,
         "target_ambient": num(targets.get("ambient")),
         "stalled": "true" if extras.get("stalled") else "false",
         "fuel_low": "true" if extras.get("fuel_low") else "false",
+        "pit_low": "true" if extras.get("pit_low") else "false",
+        "fire_dying": "true" if extras.get("fire_dying") else "false",
         "predicted_done": extras.get("predicted_done"),
         "predicted_done_food1": pdone_by.get("food1"),
         "predicted_done_food2": pdone_by.get("food2"),

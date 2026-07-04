@@ -56,6 +56,7 @@ TEST_MODULES = [
     "test_cookprogram",
     "test_cookdone",
     "test_lidrecovery",
+    "test_pitguard",
     "test_probewatch",
     "test_guided",
     "test_fuel",

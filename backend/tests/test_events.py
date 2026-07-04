@@ -127,6 +127,26 @@ def test_overtemp_records_event_and_rearms():
     assert len([e for e in svc.store.list_events() if e["kind"] == "overtemp"]) == 2
 
 
+def test_pit_guard_low_and_fire_dying_through_service():
+    svc, tt = _svc()
+    pushes = []
+    svc._push = lambda title, *a, **k: pushes.append(title)
+    # At temp (arms the guard), then the fire fades: pit sinks 45 below set
+    # with the PID output pegged at 100 for ~15 minutes.
+    svc._on_line(protocol.frame("HMSU,265,265,140,,,20,20,0,20,0,2"))
+    t = 1
+    for _ in range(40):
+        tt[0] += 30; t += 30
+        svc._on_line(protocol.frame("HMSU,265,220,140,,,100,100,0,100,0,2"))
+    kinds = [e["kind"] for e in svc.store.list_events()]
+    assert kinds.count("pit_low") == 1
+    assert kinds.count("fire_dying") == 1
+    assert "Pit running low" in pushes and "Fire dying" in pushes
+    # The MQTT extras carry the live flags for the HA binary sensors.
+    ex = svc._mqtt_extras(tt[0])
+    assert ex["pit_low"] is True and ex["fire_dying"] is True
+
+
 def test_probe_event_lands_on_timeline():
     svc, tt = _svc()
     svc.save_probewatch({"dropout_secs": 5, "stall_enabled": False})

@@ -15,7 +15,11 @@ no YAML needed for the entities themselves. Everything is local; no cloud.
 | `binary_sensor.heatermeter_lid_open` | Lid-open detection |
 | `binary_sensor.heatermeter_cook_stalled` | A food probe is in the evaporative stall |
 | `binary_sensor.heatermeter_fuel_low` | Blower near its limit: add charcoal |
+| `binary_sensor.heatermeter_pit_running_low` | Pit Guard: pit sustained well below the setpoint (armed only after reaching temp; quiet during lid opens) |
+| `binary_sensor.heatermeter_fire_dying` | Pit Guard critical: fan at max but the pit is still low - the fuel is likely spent |
 | `sensor.heatermeter_predicted_done` | Timestamp the soonest targeted food is predicted done |
+| `sensor.heatermeter_food_1_predicted_done` (food 2, ambient) | Per-probe predicted-done timestamps |
+| `sensor.heatermeter_pit_label` etc. + `text.heatermeter_pit_name` | Probe names as sensors, renameable from HA |
 
 Entity ids vary with your node id; check the HeaterMeter device page in HA.
 

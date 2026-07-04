@@ -60,8 +60,9 @@ def test_discovery_configs_shape():
     # 4 temp sensors + fan + lid binary + setpoint number + 3 target numbers = 10,
     # +3 intelligence (stalled, fuel_low, predicted_done) = 13,
     # +3 per-probe predicted_done sensors = 16,
-    # +4 name sensors + 4 name text entities = 24.
-    assert len(cfgs) == 24
+    # +2 pit-guard binary sensors (pit_low, fire_dying) = 18,
+    # +4 name sensors + 4 name text entities = 26.
+    assert len(cfgs) == 26
     assert any("/sensor/hm/pit/config" in t for t in topics)
     assert any("/binary_sensor/hm/lid/config" in t for t in topics)
     assert any("/number/hm/setpoint/config" in t for t in topics)
@@ -138,10 +139,10 @@ def test_bridge_connect_publishes_discovery_and_availability():
     bridge.connect()
     fake.fire_connect()
 
-    # availability online + discovery for all 24 entities published retained.
+    # availability online + discovery for all 26 entities published retained.
     assert (bridge.availability_topic, "online", True) in fake.published
     discovery_pubs = [p for p in fake.published if "/config" in p[0]]
-    assert len(discovery_pubs) == 24
+    assert len(discovery_pubs) == 26
     assert all(retain for _, _, retain in discovery_pubs)
     # subscribed to the setpoint command topic.
     assert bridge.setpoint_command_topic in fake.subscribed

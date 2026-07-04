@@ -20,7 +20,7 @@ import time
 from typing import Callable, Optional
 
 from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
-               lidrecovery, probewatch, protocol)
+               lidrecovery, pitguard, probewatch, protocol)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
@@ -95,11 +95,11 @@ class HeaterMeterService:
         self._setpoint_prev: Optional[float] = None
         # Per-probe high-alarm (cook target) tracker for food-target-change markers.
         self._food_target_prev: dict = {}
-        # Over-temp ("running hot") detector state: a sustained pit excursion well
-        # above the setpoint (a stuck-open damper / runaway), independent of any
-        # manual high alarm.
-        self._overtemp_since: Optional[float] = None
-        self._overtemp_active = False
+        # Pit Guard (see pitguard.py): context-aware pit low/high alerting -
+        # relative bands, at-temp arming, lid suppression, fire-dying escalation,
+        # and the over-temp ("running hot") detector.
+        self.pitguard_config_path: Optional[str] = None
+        self._pitguard = pitguard.PitGuard()
         # Browser-agnostic UI prefs (e.g. welcome-banner dismissed), persisted
         # server-side so they're a property of the HeaterMeter, not the browser.
         self.uiprefs_config_path: Optional[str] = None
@@ -198,6 +198,7 @@ class HeaterMeterService:
         self._cookdone.set_config(self._load_cookdone_file())
         self._probewatch.set_config(self._load_probewatch_file())
         self._lidrecovery.set_config(self._load_lidrecovery_file())
+        self._pitguard.set_config(self._load_pitguard_file())
         self._push_cfg = self._load_push_file()
         if existing and existing.get("completed_ts"):
             self._cookdone.mark_already_complete()
@@ -634,6 +635,30 @@ class HeaterMeterService:
         self._lidrecovery.set_config(clean)
         return clean
 
+    # -- Pit Guard ----------------------------------------------------------
+
+    def _load_pitguard_file(self) -> dict:
+        if self.pitguard_config_path and os.path.exists(self.pitguard_config_path):
+            try:
+                with open(self.pitguard_config_path) as f:
+                    return pitguard.sanitize(json.load(f))
+            except Exception:
+                pass
+        return pitguard.sanitize({})
+
+    def get_pitguard(self) -> dict:
+        return dict(self._pitguard.cfg)
+
+    def save_pitguard(self, cfg: dict) -> dict:
+        clean = pitguard.sanitize(cfg)
+        if self.pitguard_config_path:
+            os.makedirs(os.path.dirname(self.pitguard_config_path) or ".",
+                        exist_ok=True)
+            with open(self.pitguard_config_path, "w") as f:
+                json.dump(clean, f)
+        self._pitguard.set_config(clean)
+        return clean
+
     def _drive_lid_recovery(self, ts: float) -> None:
         """Per-HMSU: let the lid-recovery detector shorten the firmware's fixed
         lid-open wait and ramp the fan back gently. Best-effort; never raises."""
@@ -857,40 +882,42 @@ class HeaterMeterService:
         # target. Mark when one is set or changed (>= 1 degree) after the first
         # observation, so the graph shows "Food 1 -> 203" the moment you set it.
         self._check_target_edges(ts)
-        self._check_overtemp(ts)
+        self._drive_pitguard(ts)
 
-    _OVERTEMP_MARGIN = 40.0    # degrees over setpoint that counts as "running hot"
-    _OVERTEMP_SECS = 120.0     # must hold that long before flagging (ignore blips)
-
-    def _check_overtemp(self, ts: float) -> None:
-        """Flag a sustained pit excursion well above the setpoint (a runaway /
-        stuck-open damper), independent of any manual alarm. Records one event
-        per excursion; re-arms once the pit settles back near the setpoint."""
+    def _drive_pitguard(self, ts: float) -> None:
+        """Per-HMSU: feed the Pit Guard and turn its events into timeline
+        markers + pushes. Best-effort; never raises."""
         st = self.state.status
-        sp = st.set_point if isinstance(st.set_point, (int, float)) else None
-        pit = st.pit if isinstance(st.pit, (int, float)) else None
-        if sp is None or pit is None or sp <= 0:
-            self._overtemp_since = None
-            self._overtemp_active = False
+        out = st.output_pct if isinstance(st.output_pct, (int, float)) else st.fan_pct
+        try:
+            result = self._pitguard.update(ts, st.set_point, st.pit, out,
+                                           st.lid_countdown, st.pid_mode)
+        except Exception:
             return
-        if pit >= sp + self._OVERTEMP_MARGIN:
-            if self._overtemp_since is None:
-                self._overtemp_since = ts
-            elif (not self._overtemp_active
-                    and (ts - self._overtemp_since) >= self._OVERTEMP_SECS):
-                self._overtemp_active = True
-                self._record_event(ts, "overtemp",
-                                   label=f"Running hot {round(pit)}° (set {round(sp)}°)",
-                                   value=float(pit))
+        for ev in result.get("events") or []:
+            kind = ev.get("kind")
+            self._record_event(ts, kind, label=ev.get("label"),
+                               value=ev.get("value"))
+            sp = st.set_point
+            pit = ev.get("value")
+            if kind == "pit_low":
+                self._push("Pit running low",
+                           f"Pit is {round(pit)}°, {round(sp - pit)}° below the "
+                           f"{round(sp)}° setpoint. Check the fire.",
+                           priority="default", tags="warning")
+            elif kind == "fire_dying":
+                self._push("Fire dying",
+                           f"The fan has been at max but the pit is still "
+                           f"{round(pit)}°. The fuel is likely spent - add "
+                           "charcoal now.",
+                           priority="high", tags="rotating_light")
+            elif kind == "overtemp":
                 self._push("Pit running hot",
                            f"Pit is {round(pit)}°, well above the {round(sp)}° "
                            "setpoint. Check the damper/lid.",
                            priority="high", tags="fire")
-        else:
-            self._overtemp_since = None
-            # Re-arm only after it comes back within half the margin (hysteresis).
-            if self._overtemp_active and pit <= sp + self._OVERTEMP_MARGIN * 0.5:
-                self._overtemp_active = False
+            self._emit({"type": "pit_guard", "kind": kind, "ts": ts,
+                        "label": ev.get("label")})
 
     def _check_target_edges(self, ts: float) -> None:
         al = self.state.alarms or []
@@ -1224,7 +1251,10 @@ class HeaterMeterService:
             if da and (ts - p.get("ts", 0)) <= 120:
                 per_channel[channel] = self._iso_local(da)
                 soonest = da if soonest is None else min(soonest, da)
+        guard = self._pitguard.status()
         return {"stalled": stalled, "fuel_low": self._fuel.alerted,
+                "pit_low": bool(guard.get("low")),
+                "fire_dying": bool(guard.get("fire_dying")),
                 "predicted_done": self._iso_local(soonest) if soonest else None,
                 "predicted_done_by": per_channel}
 
@@ -2623,7 +2653,14 @@ class HeaterMeterService:
         name = names[probe] if probe < len(names) else labels[probe]
         temp = self._probe_temp(probe)
         tstr = f" ({temp:.0f}°)" if isinstance(temp, (int, float)) else ""
-        if half == "high":
+        if probe == 0:
+            # Pit hardware alarms are the static safety backstop, not a target.
+            title, msg = ((f"Pit high limit{tstr}",
+                           f"{name} is above its hardware high limit{tstr}.")
+                          if half == "high" else
+                          (f"Pit low limit{tstr}",
+                           f"{name} is below its hardware low limit{tstr}."))
+        elif half == "high":
             title, msg = (f"{name} reached target{tstr}",
                           f"{name} is at or above its high alarm{tstr}.")
         else:

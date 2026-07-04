@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -169,6 +169,17 @@ class PushConfigBody(BaseModel):
     key_id: str | None = None
     key_path: str | None = None
     bundle_id: str | None = None
+
+
+class PitGuardBody(BaseModel):
+    enabled: bool | None = None
+    low_band: float | None = None        # deg below set = "running low"
+    low_dwell_secs: int | None = None    # sustained before the warning
+    fire_fan_pct: int | None = None      # output >= this while low = "max air"
+    fire_dwell_secs: int | None = None   # pegged+low this long -> fire-dying
+    lid_grace_secs: int | None = None    # post-lid suppression window
+    high_margin: float | None = None     # deg over set = "running hot"
+    high_dwell_secs: int | None = None
 
 
 class LidRecoveryBody(BaseModel):
@@ -601,6 +612,17 @@ def create_app(service) -> FastAPI:
         merged = {**cur, **{k: v for k, v in body.model_dump().items()
                             if v is not None}}
         return service.save_probewatch(merged)
+
+    @app.get("/api/pit-guard")
+    async def get_pit_guard():
+        return {**service.get_pitguard(), "live": service._pitguard.status()}
+
+    @app.post("/api/pit-guard")
+    async def set_pit_guard(body: PitGuardBody):
+        cur = service.get_pitguard()
+        merged = {**cur, **{k: v for k, v in body.model_dump().items()
+                            if v is not None}}
+        return service.save_pitguard(merged)
 
     @app.get("/api/lid-recovery")
     async def get_lid_recovery():

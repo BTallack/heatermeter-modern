@@ -422,6 +422,29 @@ def test_notes_scoped_by_session_and_window():
         assert [n["text"] for n in recent] == ["this cook"]
 
 
+def test_pit_guard_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+
+    from heatermeterd.api import create_app
+
+    svc = HeaterMeterService(SimLink(interval=10.0, seed=1), Store(":memory:"))
+    app = create_app(svc)
+    with TestClient(app) as c:
+        d = c.get("/api/pit-guard").json()
+        assert d["enabled"] is True and d["low_band"] == 30.0
+        assert d["live"] == {"low": False, "fire_dying": False,
+                             "overtemp": False, "armed": False}
+        # Partial update merges + clamps.
+        r = c.post("/api/pit-guard", json={"low_band": 5, "fire_fan_pct": 200,
+                                           "enabled": False}).json()
+        assert r["low_band"] == 10.0 and r["fire_fan_pct"] == 100
+        assert r["enabled"] is False
+        assert r["high_margin"] == d["high_margin"]   # untouched preserved
+        assert c.get("/api/pit-guard").json()["enabled"] is False
+
+
 def test_lid_recovery_api():
     if not HAVE_WEB:
         print("    (skipped: fastapi/httpx not installed)")
@@ -434,14 +457,14 @@ def test_lid_recovery_api():
     app = create_app(svc)
     with TestClient(app) as c:
         d = c.get("/api/lid-recovery").json()
-        assert d["enabled"] is True and "recover_delta" in d and "ramp_secs" in d
-        # Partial update merges + clamps; start_pct floors at 0, ramp_secs caps.
+        assert d["enabled"] is True and "recover_delta" in d
+        assert "ramp_secs" not in d      # retired with the kamado-safe redesign
+        # Partial update merges + clamps; retired keys are ignored.
         r = c.post("/api/lid-recovery",
-                   json={"start_pct": -10, "ramp_secs": 99999,
+                   json={"recover_delta": 999, "min_armed_secs": -3,
                          "enabled": False}).json()
-        assert r["start_pct"] == 0 and r["ramp_secs"] == 600
+        assert r["recover_delta"] == 50.0 and r["min_armed_secs"] == 0
         assert r["enabled"] is False
-        assert r["recover_delta"] == d["recover_delta"]   # untouched preserved
         assert c.get("/api/lid-recovery").json()["enabled"] is False
 
 

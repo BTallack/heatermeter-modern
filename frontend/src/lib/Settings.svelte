@@ -35,6 +35,16 @@
 
   let alarms = $state(['', '', '', '', '', '', '', '']); // low0,high0,...
 
+  // Pit Guard (smart pit alerting; replaces the old per-probe alarm grid) +
+  // optional static board-level limits (the beeper backstop if the Pi dies).
+  let pg = $state({ enabled: true, low_band: 30, low_dwell_secs: 300,
+                    fire_fan_pct: 90, fire_dwell_secs: 300, lid_grace_secs: 600,
+                    high_margin: 40, high_dwell_secs: 120 });
+  let hwInit = false;
+  let hwEnabled = $state(false);
+  let hwFloor = $state(140);
+  let hwCeil = $state(450);
+
   let pid = $state({ b: '', p: '', i: '', d: '' });
   let pidPresetSel = $state('');
 
@@ -79,6 +89,15 @@
       const v = al[i];
       return v == null || v === '' || Number(v) < 0 ? '' : String(v);
     });
+    if (!hwInit) {
+      // Seed the hardware-limit fields from the board's pit alarm slots once.
+      hwInit = true;
+      const lo = parseFloat(String(al[0] ?? '').replace(/[LH]$/, ''));
+      const hi = parseFloat(String(al[1] ?? '').replace(/[LH]$/, ''));
+      hwEnabled = lo > 0 || hi > 0;
+      if (lo > 0) hwFloor = lo;
+      if (hi > 0) hwCeil = hi;
+    }
 
     const p = d.pid || {};
     pid = { b: p.b ?? '', p: p.p ?? '', i: p.i ?? '', d: p.d ?? '' };
@@ -173,6 +192,7 @@
     try { Object.assign(notify, await getJSON('notify')); notify.token = ''; } catch (_) {}
     try { tuneStatus = await getJSON('autotune'); pollTuneIfRunning(); } catch (_) {}
     try { Object.assign(lidRec, await getJSON('lid-recovery')); } catch (_) {}
+    try { const d = await getJSON('pit-guard'); delete d.live; Object.assign(pg, d); } catch (_) {}
   }
 
   async function refreshStatus() {
@@ -222,12 +242,33 @@
     } catch (e) { flash('Type change failed', false); }
   }
 
-  async function saveAlarms() {
+  async function savePitGuard() {
     try {
-      await postJSON('alarms', { thresholds: alarms.map((x) => numOrNull(x)) });
-      flash('Alarms saved');
+      const r = await postJSON('pit-guard', {
+        enabled: pg.enabled,
+        low_band: Number(pg.low_band), low_dwell_secs: Number(pg.low_dwell_secs),
+        fire_fan_pct: Number(pg.fire_fan_pct),
+        fire_dwell_secs: Number(pg.fire_dwell_secs),
+        lid_grace_secs: Number(pg.lid_grace_secs),
+        high_margin: Number(pg.high_margin),
+        high_dwell_secs: Number(pg.high_dwell_secs),
+      });
+      delete r.live; Object.assign(pg, r);
+      flash('Pit Guard saved');
+    } catch (e) { flash('Pit Guard save failed', false); }
+  }
+
+  async function saveHwLimits() {
+    // Pit slots only; nulls keep every food probe's thresholds untouched.
+    // -1 disables a slot on the board.
+    const th = [hwEnabled ? Number(hwFloor) : -1,
+                hwEnabled ? Number(hwCeil) : -1,
+                null, null, null, null, null, null];
+    try {
+      await postJSON('alarms', { thresholds: th });
+      flash('Hardware limits saved');
       refreshStatus();
-    } catch (e) { flash('Alarm save failed', false); }
+    } catch (e) { flash('Hardware limit save failed', false); }
   }
 
   async function savePid() {
@@ -771,27 +812,35 @@
     </div>
   </details>
 
-  <!-- Alarms -->
+  <!-- Pit Guard (replaces the old absolute high/low alarm grid) -->
   <details class="hm-card rounded-2xl overflow-hidden">
-    <summary class="cursor-pointer select-none px-4 py-3 font-bold">Temperature Alarms</summary>
+    <summary class="cursor-pointer select-none px-4 py-3 font-bold">Pit Guard</summary>
     <div class="px-4 pb-4 space-y-3">
-      <p class="text-xs opacity-60">Leave a field blank to disable that alarm.</p>
-      {#each [0, 1, 2, 3] as i}
-        <div class="grid grid-cols-[1fr_1fr_1fr] gap-2 items-end">
-          <div class="text-sm font-semibold self-center">{names[i] || (i === 0 ? 'Pit' : 'Probe ' + (i + 1))}</div>
-          <div>
-            <label class="block"><span class="block text-xs opacity-60 mb-1">Low °</span>
-            <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={alarms[i * 2]} />
-            </label>
+      <p class="text-xs opacity-60">Smart pit alerts, relative to your setpoint. Quiet during startup, lid opens, and recovery. A sustained dip warns you; max air with no recovery escalates to a fire-dying alert. Food targets are set from the Cook tab or by tapping a probe on the Dashboard.</p>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={pg.enabled} /> Enable Pit Guard</label>
+      <div class="grid grid-cols-2 gap-2" class:opacity-50={!pg.enabled}>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Low: ° below set</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.low_band} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Warn after (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.low_dwell_secs} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Fire-dying: fan ≥ (%)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.fire_fan_pct} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Escalate after (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.fire_dwell_secs} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Hot: ° above set</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.high_margin} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Hot after (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.high_dwell_secs} /></label></div>
+        <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Quiet after a lid open (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.lid_grace_secs} /></label></div>
+      </div>
+      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={savePitGuard}>Save Pit Guard</button>
+
+      <details class="rounded-xl bg-black/5 dark:bg-white/5 p-3">
+        <summary class="cursor-pointer select-none text-sm font-semibold">Hardware safety limits (advanced)</summary>
+        <div class="mt-2 space-y-2">
+          <p class="text-xs opacity-60">Static pit limits stored on the controller itself, so the board's beeper still fires even if the Pi goes down. Written once to the board; leave off unless you want the last-resort backstop.</p>
+          <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={hwEnabled} /> Enable board-level pit limits</label>
+          <div class="grid grid-cols-2 gap-2" class:opacity-50={!hwEnabled}>
+            <div><label class="block"><span class="block text-xs opacity-60 mb-1">Pit floor °</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!hwEnabled} bind:value={hwFloor} /></label></div>
+            <div><label class="block"><span class="block text-xs opacity-60 mb-1">Pit ceiling °</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!hwEnabled} bind:value={hwCeil} /></label></div>
           </div>
-          <div>
-            <label class="block"><span class="block text-xs opacity-60 mb-1">High °</span>
-            <input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={alarms[i * 2 + 1]} />
-            </label>
-          </div>
+          <button class="px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold w-full text-sm" onclick={saveHwLimits}>Save Hardware Limits</button>
         </div>
-      {/each}
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveAlarms}>Save Alarms</button>
+      </details>
     </div>
   </details>
 
