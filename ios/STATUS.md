@@ -27,6 +27,27 @@ Note: `xcode-select` on this Mac still points at the Command Line Tools; the
 is required for `xcodebuild`. An iOS simulator *runtime* must be installed
 (`xcodebuild -downloadPlatform iOS`) before it can run.
 
+**It runs against the real Pi (2026-09-14).** iOS 27.0 runtime installed;
+iPhone 18 Pro simulator (`3239EF15-E46B-4BCC-9D25-27242A25973A`) boots the app,
+and the Dashboard renders live data (the Pi's log shows the simulator's
+`/api/status` + `/api/sessions` + WS requests). Headless run recipe — no taps
+needed, onboarding is skipped by seeding the saved host:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+U=3239EF15-E46B-4BCC-9D25-27242A25973A
+xcrun simctl boot $U; xcrun simctl bootstatus $U -b
+xcrun simctl install $U build/Debug-iphonesimulator/HeaterMeter.app
+xcrun simctl spawn $U defaults write dev.tallack.heatermeter hm.baseURL "http://192.168.3.164:8080"
+xcrun simctl launch $U dev.tallack.heatermeter
+xcrun simctl io $U screenshot dashboard.png
+```
+
+Still to verify visually: Graph, Cook, Settings tabs (need taps). The
+Claude Code iOS Simulator integration refuses while `xcode-select` points at
+the CLT — running `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
+once unlocks live-panel + tap/type driving.
+
 ## To resume (exact next steps)
 
 ```sh

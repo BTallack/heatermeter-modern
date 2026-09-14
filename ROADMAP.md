@@ -126,11 +126,21 @@ best-in-class and adding a safety net. Shipped + deployed:
 - Also this session: kamado-safe lid recovery + graph series persistence +
   graph stall self-heal (v0.6.0) after the 07-02 cook post-mortem.
 
+### Status (2026-09-14): v0.9.0 Power-up policy; iOS app compiles + runs live
+- **Power-up policy** (v0.9.0): the AVR resumes its stored setpoint on power
+  return (it came back at 600F / 100% output into a cold pit). Now: start back
+  up OFF, unless a short power blip interrupted an active cook (resume), and a
+  hot pit is never idled. `powerup.py`, `/api/power-up`, Settings card.
+- **iOS app compiles and runs** in the iPhone 18 Pro simulator against the real
+  Pi (live Dashboard). Two first-build fixes (multi-var `@State`; `NSOrderedSet`
+  cast that blanked preset categories). See `ios/STATUS.md`.
+
 ### Near-term priorities
 1. **Validate serve-time planning + Pit Guard on a real cook** (thresholds may
    want tuning to the kamado's rhythm).
-2. **iOS app**: first compile (license accept) -> then APNs push + Live Activity /
-   Dynamic Island cook view (daemon `apns.py` is ready). See `ios/STATUS.md`.
+2. **iOS app**: tap through Graph/Cook/Settings in the simulator (needs
+   `xcode-select` pointed at Xcode.app for the simulator integration), then
+   APNs push + Live Activity / Dynamic Island (daemon `apns.py` is ready).
 3. Per-cook pit-stability score vs your own history; cook-tab grouping/reorder.
 
 Note: SwiftUI views + new web layouts can't be visually verified in a headless
