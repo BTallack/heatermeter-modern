@@ -44,6 +44,8 @@
   let hwEnabled = $state(false);
   let hwFloor = $state(140);
   let hwCeil = $state(450);
+  // Power-up policy: resume a blipped cook, idle a stale EEPROM setpoint.
+  let pu = $state({ enabled: true, blip_secs: 600, cold_below: 150 });
 
   let pid = $state({ b: '', p: '', i: '', d: '' });
   let pidPresetSel = $state('');
@@ -193,6 +195,7 @@
     try { tuneStatus = await getJSON('autotune'); pollTuneIfRunning(); } catch (_) {}
     try { Object.assign(lidRec, await getJSON('lid-recovery')); } catch (_) {}
     try { const d = await getJSON('pit-guard'); delete d.live; Object.assign(pg, d); } catch (_) {}
+    try { Object.assign(pu, await getJSON('power-up')); } catch (_) {}
   }
 
   async function refreshStatus() {
@@ -269,6 +272,15 @@
       flash('Hardware limits saved');
       refreshStatus();
     } catch (e) { flash('Hardware limit save failed', false); }
+  }
+
+  async function savePowerUp() {
+    try {
+      Object.assign(pu, await postJSON('power-up', {
+        enabled: pu.enabled, blip_secs: Number(pu.blip_secs), cold_below: Number(pu.cold_below),
+      }));
+      flash('Power-up behavior saved');
+    } catch (e) { flash('Power-up save failed', false); }
   }
 
   async function savePid() {
@@ -841,6 +853,20 @@
           <button class="px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold w-full text-sm" onclick={saveHwLimits}>Save Hardware Limits</button>
         </div>
       </details>
+    </div>
+  </details>
+
+  <!-- Power-up behavior -->
+  <details class="hm-card rounded-2xl overflow-hidden">
+    <summary class="cursor-pointer select-none px-4 py-3 font-bold">Power-up Behavior</summary>
+    <div class="px-4 pb-4 space-y-3">
+      <p class="text-xs opacity-60">The controller resumes its last setpoint whenever power returns, so after an outage or being unplugged it can come back driving toward an old temperature into a cold pit. With this on, HeaterMeter starts back up <b>off</b> - unless it was only a short power blip during a cook, in which case the cook carries on. A hot pit is never idled.</p>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={pu.enabled} /> Start up off after an outage</label>
+      <div class="grid grid-cols-2 gap-2" class:opacity-50={!pu.enabled}>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Blip window (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pu.enabled} bind:value={pu.blip_secs} /></label></div>
+        <div><label class="block"><span class="block text-xs opacity-60 mb-1">Cold pit below (°)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pu.enabled} bind:value={pu.cold_below} /></label></div>
+      </div>
+      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={savePowerUp}>Save Power-up Behavior</button>
     </div>
   </details>
 

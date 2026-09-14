@@ -267,6 +267,14 @@ class Store:
             )
             self.conn.commit()
 
+    def latest_sample(self):
+        """The most recent sample row across all sessions, or None. Used by the
+        power-up policy to size the gap since the board was last heard from."""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT * FROM samples ORDER BY ts DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
     def last_sample(self, session_id: int):
         """Return the most recent sample row for a session, or None."""
         with self.lock:

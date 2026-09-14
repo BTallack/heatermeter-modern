@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -169,6 +169,12 @@ class PushConfigBody(BaseModel):
     key_id: str | None = None
     key_path: str | None = None
     bundle_id: str | None = None
+
+
+class PowerUpBody(BaseModel):
+    enabled: bool | None = None
+    blip_secs: int | None = None         # gap <= this = power blip -> resume
+    cold_below: float | None = None      # pit below this = safe to idle
 
 
 class ServePlanBody(BaseModel):
@@ -621,6 +627,15 @@ def create_app(service) -> FastAPI:
         merged = {**cur, **{k: v for k, v in body.model_dump().items()
                             if v is not None}}
         return service.save_probewatch(merged)
+
+    @app.get("/api/power-up")
+    async def get_power_up():
+        return service.get_powerup()
+
+    @app.post("/api/power-up")
+    async def set_power_up(body: PowerUpBody):
+        return service.save_powerup(
+            {k: v for k, v in body.model_dump().items() if v is not None})
 
     @app.get("/api/serve-plan")
     async def get_serve_plan():

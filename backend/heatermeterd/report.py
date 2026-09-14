@@ -31,6 +31,7 @@ _EVENT_COLORS = {
     "disconnect": "#ff5630", "fault": "#ff5630", "reconnect": "#6b9080",
     "alarm_low": "#ff8b00", "overtemp": "#ff5630",
     "pit_low": "#ff8b00", "fire_dying": "#ff5630", "serve_status": "#9aa0a6",
+    "powerup_idle": "#9aa0a6", "powerup_resume": "#6b9080",
 }
 
 

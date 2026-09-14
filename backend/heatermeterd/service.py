@@ -20,7 +20,7 @@ import time
 from typing import Callable, Optional
 
 from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
-               lidrecovery, pitguard, probewatch, protocol, serveplan)
+               lidrecovery, pitguard, powerup, probewatch, protocol, serveplan)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
@@ -105,6 +105,12 @@ class HeaterMeterService:
         self.serveplan_config_path: Optional[str] = None
         self._serveplan_cfg: dict = serveplan.sanitize({})
         self._serve_status_prev: Optional[str] = None
+        # Power-up policy (see powerup.py): decided once on the first status
+        # after start - resume a blipped cook, idle a stale EEPROM setpoint.
+        self.powerup_config_path: Optional[str] = None
+        self._powerup_cfg: dict = powerup.sanitize({})
+        self._powerup_pending = False
+        self._powerup_last: tuple = (None, None)   # (last sample ts, set_point)
         # Browser-agnostic UI prefs (e.g. welcome-banner dismissed), persisted
         # server-side so they're a property of the HeaterMeter, not the browser.
         self.uiprefs_config_path: Optional[str] = None
@@ -206,6 +212,13 @@ class HeaterMeterService:
         self._pitguard.set_config(self._load_pitguard_file())
         self._serveplan_cfg = self._load_serveplan_file()
         self._push_cfg = self._load_push_file()
+        # Power-up policy: remember when the board was last heard from (and
+        # whether a cook was running) so the first status can decide whether
+        # to resume a blipped cook or idle a stale EEPROM setpoint.
+        self._powerup_cfg = self._load_powerup_file()
+        latest = self.store.latest_sample() or {}
+        self._powerup_last = (latest.get("ts"), latest.get("set_point"))
+        self._powerup_pending = True
         if existing and existing.get("completed_ts"):
             self._cookdone.mark_already_complete()
         self.link.start(self._on_line, self.loop)
@@ -664,6 +677,69 @@ class HeaterMeterService:
                 json.dump(clean, f)
         self._pitguard.set_config(clean)
         return clean
+
+    # -- power-up policy ---------------------------------------------------
+
+    def _load_powerup_file(self) -> dict:
+        if self.powerup_config_path and os.path.exists(self.powerup_config_path):
+            try:
+                with open(self.powerup_config_path) as f:
+                    return powerup.sanitize(json.load(f))
+            except Exception:
+                pass
+        return powerup.sanitize({})
+
+    def get_powerup(self) -> dict:
+        return dict(self._powerup_cfg)
+
+    def save_powerup(self, cfg: dict) -> dict:
+        clean = powerup.sanitize({**self._powerup_cfg, **(cfg or {})})
+        self._powerup_cfg = clean
+        if self.powerup_config_path:
+            try:
+                os.makedirs(os.path.dirname(self.powerup_config_path) or ".",
+                            exist_ok=True)
+                with open(self.powerup_config_path, "w") as f:
+                    json.dump(clean, f)
+            except Exception:
+                pass
+        return clean
+
+    def _check_powerup(self, ts: float) -> None:
+        """One-shot on the first real status after start: resume a blipped
+        cook, or idle a setpoint the board resumed from EEPROM into a cold pit."""
+        st = self.state.status
+        if st.set_point is None:
+            return                          # no real status yet; stay pending
+        self._powerup_pending = False
+        last_ts, last_sp = self._powerup_last
+        decision = powerup.decide(ts, last_ts, last_sp, st.set_point, st.pit,
+                                  st.pid_mode, self._powerup_cfg)
+        sp = round(st.set_point) if isinstance(st.set_point, (int, float)) else st.set_point
+        if decision == "idle":
+            try:
+                self.link.send(protocol.set_setpoint("O", unit=""))
+            except Exception:
+                pass
+            self._record_event(ts, "powerup_idle",
+                               label=f"Powered on idle (was set {sp}°)",
+                               value=float(st.set_point))
+            self._push("HeaterMeter powered on",
+                       f"It came back with the old {sp}° setpoint but the pit "
+                       "was cold, so it's been left off. Set a temperature when "
+                       "you're ready to cook.",
+                       priority="default", tags="electric_plug")
+            self._emit({"type": "powerup", "decision": "idle", "ts": ts,
+                        "setpoint": st.set_point})
+        elif decision == "resume":
+            self._record_event(ts, "powerup_resume",
+                               label=f"Resumed {sp}° cook after a power interruption",
+                               value=float(st.set_point))
+            self._push("Cook resumed",
+                       f"Power came back; the {sp}° cook is carrying on.",
+                       priority="default", tags="electric_plug")
+            self._emit({"type": "powerup", "decision": "resume", "ts": ts,
+                        "setpoint": st.set_point})
 
     # -- serve-time plan ("dinner at 6") ------------------------------------
 
@@ -2661,6 +2737,8 @@ class HeaterMeterService:
                 self._push("HeaterMeter back online",
                            "The controller is reporting again.",
                            tags="white_check_mark")
+            if self._powerup_pending:
+                self._check_powerup(ts)
             self._check_alarms(ts)
             self._refresh_predictions(ts)
             self._check_eta_push(ts)

@@ -91,6 +91,7 @@ def main(argv=None) -> int:
         service.uiprefs_config_path = os.path.join(cfg_dir, "uiprefs.json")
         service.pitguard_config_path = os.path.join(cfg_dir, "pitguard.json")
         service.serveplan_config_path = os.path.join(cfg_dir, "serveplan.json")
+        service.powerup_config_path = os.path.join(cfg_dir, "powerup.json")
         service.profiles_path = os.path.join(cfg_dir, "profiles.json")
         service.probe_presets_path = os.path.join(cfg_dir, "probe_presets.json")
         service.storage_config_path = os.path.join(cfg_dir, "storage.json")
