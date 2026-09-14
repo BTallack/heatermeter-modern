@@ -6,10 +6,26 @@ _Paused 2026-06-22 to make other improvements first. This is where to pick up._
 
 A full native SwiftUI **control app** (all four screens) is written and committed
 to `main`. It's a second client of the existing REST + WebSocket API — no backend
-changes. The XcodeGen project **generates cleanly** (`xcodegen generate` succeeds,
-which validates `project.yml`). It has **not been compiled yet**: Xcode.app is
-installed but the Xcode license hasn't been accepted on the dev machine, so
-`xcodebuild` refuses. That's the only thing between here and a first build.
+changes. **It compiles clean** (2026-09-14, Xcode 27 / iOS 27 SDK, simulator
+target, zero warnings in our code) after two first-build fixes: a multi-variable
+`@State` declaration in SettingsView, and `NSOrderedSet(...) as? [String]` casts
+in Dashboard/Cook that always yielded an empty list (would have blanked the
+preset pickers). Next: run it in the simulator against the real Pi.
+
+Build from the CLI (no signing needed for the simulator):
+
+```sh
+cd ~/Developer/heatermeter-modern/ios && xcodegen generate
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -project HeaterMeter.xcodeproj -target HeaterMeter \
+  -sdk iphonesimulator -configuration Debug -arch arm64 CODE_SIGNING_ALLOWED=NO build
+# -> ios/build/Debug-iphonesimulator/HeaterMeter.app
+```
+
+Note: `xcode-select` on this Mac still points at the Command Line Tools; the
+`DEVELOPER_DIR` override (or `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`)
+is required for `xcodebuild`. An iOS simulator *runtime* must be installed
+(`xcodebuild -downloadPlatform iOS`) before it can run.
 
 ## To resume (exact next steps)
 
