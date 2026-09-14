@@ -69,7 +69,10 @@ private struct PIDSection: View {
     let client: HeaterMeterClient
     @State private var presets: [PidPreset] = []
     @State private var presetKey = ""
-    @State private var b = "", p = "", i = "", d = ""
+    @State private var b = ""
+    @State private var p = ""
+    @State private var i = ""
+    @State private var d = ""
     @State private var tuneSetpoint = "275"
     @State private var tuneRule = "tyreus_luyben"
     @State private var tune: AutoTuneStatus?

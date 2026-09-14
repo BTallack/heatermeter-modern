@@ -226,7 +226,10 @@ private struct ProbeEditor: View {
     @State private var target = ""
     @State private var presetKey = ""
 
-    private var cats: [String] { Array(NSOrderedSet(array: meat.map(\.category)) as? [String] ?? []) }
+    private var cats: [String] {
+        var seen = Set<String>()
+        return meat.map(\.category).filter { seen.insert($0).inserted }
+    }
 
     var body: some View {
         NavigationStack {

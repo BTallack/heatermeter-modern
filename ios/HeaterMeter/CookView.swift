@@ -80,7 +80,8 @@ struct CookView: View {
     }
 
     private func programCategories() -> [String] {
-        Array(NSOrderedSet(array: programs.map { $0.category ?? "Other" }) as? [String] ?? [])
+        var seen = Set<String>()
+        return programs.map { $0.category ?? "Other" }.filter { seen.insert($0).inserted }
     }
 
     private func reload() async {
