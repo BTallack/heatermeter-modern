@@ -1394,7 +1394,9 @@ class HeaterMeterService:
             if isinstance(sc, dict) and sc.get("active_secs"):
                 durations.append(float(sc["active_secs"]))
             elif (s.get("completed_ts") and s.get("started_ts")
-                  and s["completed_ts"] > s["started_ts"]):
+                  and 0 < s["completed_ts"] - s["started_ts"] <= 48 * 3600):
+                # Unscored (e.g. thermometer-only) but finished: use the span,
+                # unless it is plainly a pre-smart-sessions week of idling.
                 durations.append(s["completed_ts"] - s["started_ts"])
         # Pair stall_start -> stall_end per session+channel for stall lengths.
         stalls = []
