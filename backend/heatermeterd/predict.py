@@ -10,6 +10,9 @@ Two models:
   temperature exponentially (Newton's law of cooling), so the curve flattens
   near the stall. Fitting that exponential captures the slowdown a linear slope
   misses, matching FireBoard Analyze's rise/stall/finish shape.
+* An honesty pass (:func:`fit_rate_decay`) over either model: a collapsing rate
+  of rise near the target is reported as a plateau ("levelling off near 202"),
+  and any deceleration caps confidence and stretches the pessimistic bound.
 
 :func:`predict` dispatches to the S-curve when a cooker (environment) temperature
 is known and the model fits, else linear. Each estimate carries seconds
@@ -33,6 +36,7 @@ class Prediction:
     eta_low: Optional[float] = None   # optimistic bound (seconds)
     eta_high: Optional[float] = None  # pessimistic bound (seconds)
     stalled: bool = False          # probe is in a detected evaporative stall
+    plateau_temp: Optional[float] = None  # model="plateau": where the probe is levelling off
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -63,6 +67,88 @@ def _r_squared(xs, ys, slope, intercept):
         return 1.0
     ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
     return 1.0 - ss_res / ss_tot
+
+
+def fit_rate_decay(timestamps, values, sub_secs: float = 1200.0, n_sub: int = 3):
+    """How quickly the rate of rise is decaying, from the last *n_sub*
+    sub-windows of *sub_secs* each (a least-squares slope per sub-window, then
+    ln(rate) against time). Returns ``(k, asymptote, rate)``: *k* per second
+    (> 0 means slowing), the temperature the probe is heading for if the
+    slowdown continues (``T_last + rate / k``, or None when not slowing), and
+    the latest rate in deg/s. ``None`` when a sub-window is too sparse or not
+    rising, so callers fall back to the plain models."""
+    import math
+    pairs = [(t, v) for t, v in zip(timestamps, values)
+             if v is not None and isinstance(v, (int, float))]
+    if len(pairs) < 5 * n_sub:
+        return None
+    t_last, v_last = pairs[-1]
+    rates, mids = [], []
+    for j in range(n_sub):
+        hi = t_last - j * sub_secs
+        lo = hi - sub_secs
+        w = [(t, v) for t, v in pairs if lo <= t <= hi]
+        if len(w) < 5:
+            return None
+        slope, _ = _linfit([t for t, _ in w], [v for _, v in w])
+        if slope is None or slope <= 0:
+            return None
+        rates.append(slope)
+        mids.append((lo + hi) / 2)
+    rates.reverse()
+    mids.reverse()
+    slope, _ = _linfit(mids, [math.log(r) for r in rates])
+    if slope is None:
+        return None
+    k = -slope
+    rate = rates[-1]
+    asym = (v_last + rate / k) if k > 1e-7 else None
+    return k, asym, rate
+
+
+# The final approach: within this many degrees of the target, a collapsing rate
+# means the meat is levelling off (its effective asymptote sits below the pit
+# temperature because of evaporative cooling), not "almost there".
+FINAL_APPROACH = 10.0
+# An implied asymptote this close above the target still counts as levelling
+# off: the last degree can take hours.
+PLATEAU_TOL = 1.0
+
+
+def _apply_rate_decay(p, timestamps, values, target):
+    """Honesty pass over a model estimate. The trailing-window models extrapolate
+    the *current* rate, so a probe whose rate is collapsing gets a confident
+    "minutes away" that can be hours wrong. Replayed against a real 11-hour pork
+    shoulder, the S-curve quoted "26 min, high confidence" for three hours while
+    the meat sat at 202 deg; the rate decay put its asymptote at 202-203 the
+    whole time. So: in the final approach with the asymptote at/below the
+    target, report a plateau; otherwise, when slowing, cap confidence at low and
+    stretch the pessimistic bound to what the decay implies."""
+    if target is None or p.eta_seconds is None or p.eta_seconds <= 0:
+        return p
+    d = fit_rate_decay(timestamps, values)
+    if d is None:
+        return p
+    k, asym, _rate = d
+    if k <= 0 or asym is None:
+        return p                    # steady or accelerating: the model stands
+    v_last = next(v for v in reversed(values) if isinstance(v, (int, float)))
+    gap = target - v_last
+    if asym <= target + PLATEAU_TOL and gap <= FINAL_APPROACH:
+        return Prediction(None, p.slope_per_min, "low", target, model="plateau",
+                          eta_low=p.eta_seconds, eta_high=None,
+                          plateau_temp=round(asym, 1))
+    import math
+    decay_eta = (math.log((asym - v_last) / (asym - target)) / k
+                 if asym > target else None)
+    slowing = asym < target + 5.0 or (
+        decay_eta is not None and decay_eta > p.eta_seconds * 1.5)
+    if not slowing:
+        return p
+    hi = max(p.eta_high or p.eta_seconds, decay_eta or p.eta_seconds * 2.5)
+    return Prediction(p.eta_seconds, p.slope_per_min, "low", target,
+                      model=p.model, eta_low=p.eta_low,
+                      eta_high=min(hi, p.eta_seconds * 4.0))
 
 
 def predict_eta(timestamps, values, target,
@@ -221,7 +307,11 @@ def predict(timestamps, values, target, env_temp=None,
     precision while the real exit depends on wrapping and the cut. We keep the
     best model's estimate as the OPTIMISTIC bound, stretch the pessimistic
     bound hard, mark confidence low, and flag ``stalled`` so the UI can say
-    "in the stall" instead of quoting a confident clock."""
+    "in the stall" instead of quoting a confident clock.
+
+    Independently of the watcher, a collapsing rate of rise near the target
+    turns the estimate into ``model="plateau"`` (no ETA; ``plateau_temp`` says
+    where the probe is levelling off) - see :func:`_apply_rate_decay`."""
     p = None
     if env_temp is not None:
         sc = predict_scurve(timestamps, values, target, env_temp,
@@ -231,6 +321,10 @@ def predict(timestamps, values, target, env_temp=None,
     if p is None:
         p = predict_eta(timestamps, values, target,
                         window_seconds=window_seconds)
+    p = _apply_rate_decay(p, timestamps, values, target)
+    if p.model == "plateau":
+        p.stalled = bool(stalled)
+        return p
     if stalled and (p.eta_seconds or 0) > 0:
         p = Prediction(p.eta_seconds, p.slope_per_min, "low", p.target,
                        model="stall", eta_low=p.eta_seconds,

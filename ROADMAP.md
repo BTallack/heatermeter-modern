@@ -135,9 +135,41 @@ best-in-class and adding a safety net. Shipped + deployed:
   Pi (live Dashboard). Two first-build fixes (multi-var `@State`; `NSOrderedSet`
   cast that blanked preset categories). See `ios/STATUS.md`.
 
+### Status (2026-09-15): v0.10.0 Honest predictions + bounds-aware serve plan
+Validated Pit Guard and the predictor by **replaying real cooks** from the
+Pi's database (`backend/tools/replay_cook.py`, stdlib, read-only):
+- **Pit Guard: no change needed.** Across ~30 lid opens it raised zero
+  lid-related alarms; its three firings were all real (the 07-02 runaway 8 min
+  after a lid close; a 426° flare on the 07-03 high-heat cook; a genuine
+  fire-dying on 07-03 where the pit fell 345→259° with the fan pegged after
+  the setpoint was left at 400° overnight). Band/dwell sweeps give identical
+  results, so the defaults are not on a knife edge.
+- **Predictor: fixed a confident lie.** On the 11-hour pork shoulder the
+  S-curve said "done in 26 min, high confidence" for three hours while the
+  meat sat at 202°. New rate-decay honesty pass in `predict.py`: in the final
+  10° a collapsing rate with the implied asymptote at/below target reports
+  `model="plateau"` ("levelling off ~202°" - both probes on that cook, and
+  Food 2 never did reach 203°); any deceleration caps confidence at low and
+  stretches the pessimistic bound. The service now also passes the probe
+  watcher's stall verdict into the cached predictions (it never did).
+- **Serve plan plans against both bounds:** "late" only when even the model
+  estimate misses dinner; new **at_risk** ("may run late") when only the
+  pessimistic bound does, with wrap/bump advice and a single default-priority
+  push; a plateau counts as late with "raise the pit 15-25° to finish"; early
+  is judged on the pessimistic bound so a hold is only suggested when even the
+  slow case is early. UI shows "ready ~5:40-6:20 PM" ranges and the new states.
+
+Known limit (evidence from the replay): nothing trailing-window can foresee a
+stall that hasn't started - at 131° four hours in, every model said "~2 h" and
+the truth was 10 h. The next predictor step is a **cut-aware prior** (guided-cook
+catalog: pork shoulder at 265° ≈ 1.5-2 h/lb incl. stall) blended with the
+physics models, tightened by the user's own history (`/api/insights` already
+pairs stall durations).
+
 ### Near-term priorities
-1. **Validate serve-time planning + Pit Guard on a real cook** (thresholds may
-   want tuning to the kamado's rhythm).
+1. **Predictor cut-aware prior** (see the v0.10.0 note); re-run
+   `tools/replay_cook.py` after the next real cook to check the plateau and
+   at-risk calls in the wild.
 2. **iOS app**: all four tabs verified live (2026-09-15; Settings seeding race
    + Cook current-session fixed). Next: APNs push + Live Activity / Dynamic
    Island (daemon `apns.py` is ready), then serve-plan/Pit Guard status on the

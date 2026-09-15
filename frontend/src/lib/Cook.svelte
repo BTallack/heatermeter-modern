@@ -107,15 +107,21 @@
   let serveRest = $state(15);     // rest minutes
 
   const SERVE_LABELS = {
-    on_track: 'On track', late: 'Running late', early: 'Ahead of schedule',
+    on_track: 'On track', late: 'Running late', at_risk: 'May run late',
+    early: 'Ahead of schedule',
     no_eta: 'Waiting for a forecast…', no_target: 'Set a food target first',
     past: 'Serve time passed',
   };
   const SERVE_COLORS = {
     on_track: 'text-green-600 dark:text-green-400',
     late: 'text-red-500 font-semibold',
+    at_risk: 'text-amber-500 font-semibold',
     early: 'text-sky-500',
   };
+  function serveLabel(a) {
+    if (a?.status === 'late' && a.plateau_temp != null) return `Levelling off ~${Math.round(a.plateau_temp)}°`;
+    return SERVE_LABELS[a?.status] || '…';
+  }
   async function setServe() {
     if (!serveTime) return;
     const [h, m] = serveTime.split(':').map(Number);
@@ -369,12 +375,12 @@
           <div class="flex items-center gap-2 text-sm">
             <span class="font-semibold">Dinner {fmtClock(servePlan.serve_ts)}</span>
             <span class={'ml-auto ' + (SERVE_COLORS[servePlan.assessment?.status] || 'opacity-50')}>
-              {SERVE_LABELS[servePlan.assessment?.status] || '…'}
+              {serveLabel(servePlan.assessment)}
             </span>
             <button class="text-lg leading-none opacity-50 hover:opacity-100 px-1" onclick={clearServe} aria-label="Clear serve plan">✕</button>
           </div>
           {#if servePlan.assessment?.ready_at}
-            <div class="text-xs opacity-60 mt-0.5">Ready to eat ~{fmtClock(servePlan.assessment.ready_at)}{servePlan.rest_secs ? ` (incl. ${Math.round(servePlan.rest_secs / 60)} min rest)` : ''}</div>
+            <div class="text-xs opacity-60 mt-0.5">Ready to eat ~{fmtClock(servePlan.assessment.ready_at)}{servePlan.assessment.ready_at_high - servePlan.assessment.ready_at > 600 ? `–${fmtClock(servePlan.assessment.ready_at_high)}` : ''}{servePlan.rest_secs ? ` (incl. ${Math.round(servePlan.rest_secs / 60)} min rest)` : ''}</div>
           {/if}
           {#each servePlan.assessment?.advice || [] as a}
             <div class="text-xs mt-1 opacity-80">• {a.text}</div>

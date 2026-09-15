@@ -64,19 +64,40 @@ def _num(v):
     return v if isinstance(v, (int, float)) else None
 
 
+def _fresh(p: Optional[dict], now: float) -> bool:
+    """A prediction the plan may act on: recent, with a usable confidence, and
+    carrying either a done time or a detected plateau."""
+    return bool(p and (now - (p.get("ts") or 0)) <= FRESH_SECS
+                and p.get("confidence") in ("low", "medium", "high")
+                and (_num(p.get("done_at")) is not None
+                     or p.get("model") == "plateau"))
+
+
+def pick_bounds(predictions: dict, channel: str, now: float) -> Optional[dict]:
+    """The plan's governing done-time bounds ``{"lo", "hi", "plateau_temp"}``.
+    *lo* is the model estimate, *hi* its pessimistic bound (equal when the
+    model gave none). *predictions* is the service's last_predictions cache
+    (channel -> {ts, eta, confidence, done_at, done_at_high, model, ...}).
+    'auto' means dinner is ready when the LAST targeted item finishes - and a
+    probe levelling off below its target never finishes, so it governs and
+    reports its plateau temperature instead of a time."""
+    cands = [predictions.get(channel)] if channel != "auto" else list(predictions.values())
+    cands = [p for p in cands if _fresh(p, now)]
+    if not cands:
+        return None
+    plateaus = [p for p in cands if p.get("model") == "plateau"]
+    if plateaus:
+        return {"lo": None, "hi": None,
+                "plateau_temp": _num(plateaus[0].get("plateau_temp"))}
+    lo = max(p["done_at"] for p in cands)
+    hi = max((_num(p.get("done_at_high")) or p["done_at"]) for p in cands)
+    return {"lo": lo, "hi": max(hi, lo), "plateau_temp": None}
+
+
 def pick_done_at(predictions: dict, channel: str, now: float) -> Optional[float]:
-    """The plan's governing done time. *predictions* is the service's
-    last_predictions cache (channel -> {ts, eta, confidence, done_at, ...}).
-    'auto' means dinner is ready when the LAST targeted item finishes."""
-    def fresh(p):
-        return (p and _num(p.get("done_at")) is not None
-                and (now - (p.get("ts") or 0)) <= FRESH_SECS
-                and p.get("confidence") in ("low", "medium", "high"))
-    if channel != "auto":
-        p = predictions.get(channel)
-        return p["done_at"] if fresh(p) else None
-    dones = [p["done_at"] for p in predictions.values() if fresh(p)]
-    return max(dones) if dones else None
+    """The plan's governing done time (the model estimate), or None."""
+    b = pick_bounds(predictions, channel, now)
+    return b["lo"] if b else None
 
 
 def assess(now: float, cfg: dict, predictions: dict,
@@ -84,13 +105,17 @@ def assess(now: float, cfg: dict, predictions: dict,
            any_target: bool = False) -> dict:
     """Compare the plan against the live predictions.
 
-    Returns ``{"status", "serve_ts", "ready_at", "slack_secs", "advice": [...]}``
-    where each advice item is ``{"kind", "text"}`` (kinds: wrap, bump_pit,
-    push_serve, hold, drop_pit)."""
+    Returns ``{"status", "serve_ts", "ready_at", "ready_at_high", "slack_secs",
+    "slack_high_secs", "plateau_temp", "advice": [...]}`` where each advice
+    item is ``{"kind", "text"}`` (kinds: wrap, bump_pit, push_serve, hold,
+    drop_pit). Statuses: late (even the model estimate misses dinner),
+    at_risk (the estimate makes it but its pessimistic bound doesn't), early,
+    on_track, plus off/stale/past/no_target/no_eta."""
     cfg = sanitize(cfg)
     stalled = stalled_channels or set()
     out = {"status": "off", "serve_ts": cfg["serve_ts"], "ready_at": None,
-           "slack_secs": None, "advice": []}
+           "ready_at_high": None, "slack_secs": None, "slack_high_secs": None,
+           "plateau_temp": None, "advice": []}
     if not cfg["enabled"] or cfg["serve_ts"] <= 0:
         return out
 
@@ -101,15 +126,32 @@ def assess(now: float, cfg: dict, predictions: dict,
         out["status"] = "past"
         return out
 
-    done_at = pick_done_at(predictions, cfg["channel"], now)
-    if done_at is None:
+    b = pick_bounds(predictions, cfg["channel"], now)
+    if b is None:
         out["status"] = "no_target" if not any_target else "no_eta"
         return out
+    if b["lo"] is None:
+        # Levelling off below the target: it will not finish at this pit
+        # temperature, so it is late however far off dinner is.
+        pt = b["plateau_temp"]
+        out["status"] = "late"
+        out["plateau_temp"] = pt
+        where = f"near {round(pt)}°" if pt is not None else "below its target"
+        out["advice"] = [
+            {"kind": "bump_pit",
+             "text": f"Levelling off {where} - raise the pit 15–25° to finish."},
+            {"kind": "push_serve", "text": "Or plan on serving later."},
+        ]
+        return out
 
-    ready_at = done_at + cfg["rest_secs"]
-    slack = cfg["serve_ts"] - ready_at
-    out["ready_at"] = ready_at
+    ready_lo = b["lo"] + cfg["rest_secs"]
+    ready_hi = b["hi"] + cfg["rest_secs"]
+    slack = cfg["serve_ts"] - ready_lo
+    slack_hi = cfg["serve_ts"] - ready_hi
+    out["ready_at"] = ready_lo
+    out["ready_at_high"] = ready_hi
     out["slack_secs"] = slack
+    out["slack_high_secs"] = slack_hi
 
     late_min = int(round(-slack / 60))
     if slack < 0:
@@ -123,9 +165,18 @@ def assess(now: float, cfg: dict, predictions: dict,
                               "text": "Raise the pit 15–25° to claw back time."})
         out["advice"].append({"kind": "push_serve",
                               "text": f"Or push dinner ~{max(5, late_min)} min."})
-    elif slack > cfg["hold_window_secs"]:
+    elif slack_hi < 0:
+        out["status"] = "at_risk"
+        risk_min = int(round(-slack_hi / 60))
+        if stalled:
+            out["advice"].append({"kind": "wrap",
+                                  "text": "Wrap now to be safe - a long stall would make this late."})
+        out["advice"].append({"kind": "bump_pit",
+                              "text": f"If the slowdown continues, ready could be ~{max(5, risk_min)} min late. "
+                                      "Bump the pit 10–15° to stay ahead."})
+    elif slack_hi > cfg["hold_window_secs"]:
         out["status"] = "early"
-        early_min = int(round(slack / 60))
+        early_min = int(round(slack_hi / 60))
         out["advice"].append({"kind": "hold",
                               "text": f"Running ~{early_min} min early - plan a "
                                       "keep-warm hold after the pull."})

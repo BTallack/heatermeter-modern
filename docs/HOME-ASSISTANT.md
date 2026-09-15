@@ -103,5 +103,7 @@ Drop the pit to keep-warm from a dashboard button (HA writes the setpoint):
   HA displays the board's unit as-is instead of auto-converting it.
 - `predicted_done` updates while a food probe has a target and is climbing; it
   reads `unknown` otherwise. Predictions during a stall are flagged
-  low-confidence in the app and may hold steady until the stall breaks.
+  low-confidence in the app and may hold steady until the stall breaks. A probe
+  that is levelling off below its target (the app shows "levelling off ~202°")
+  has no done time, so its sensor also reads `unknown` until the pit is raised.
 - All of these work offline on your LAN. If HA is down, the cook is unaffected.

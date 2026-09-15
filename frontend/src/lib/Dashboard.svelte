@@ -158,6 +158,8 @@
     if (tg == null) return '';
     if (doneAt(f.val, tg)) return ' · done';
     const e = etas[f.ch];
+    if (e && e.model === 'plateau')
+      return e.plateau_temp != null ? ` · levelling off ~${Math.round(e.plateau_temp)}°` : ' · levelling off';
     if (e && e.stalled)
       return e.eta_seconds != null && e.eta_seconds > 0
         ? ' · stall · ~' + fmtClock(Date.now() / 1000 + e.eta_seconds) + '+'
@@ -288,14 +290,16 @@
         <div class="mt-1.5 text-sm tabular-nums">
           Dinner <b>{fmtClock(servePlan.serve_ts)}</b>
           {#if servePlan.assessment?.status === 'late'}
-            <span class="text-red-500 font-semibold">· running late</span>
+            <span class="text-red-500 font-semibold">· {servePlan.assessment?.plateau_temp != null ? 'levelling off' : 'running late'}</span>
+          {:else if servePlan.assessment?.status === 'at_risk'}
+            <span class="text-amber-500 font-semibold">· may run late</span>
           {:else if servePlan.assessment?.status === 'on_track'}
             <span class="text-green-600 dark:text-green-400">· on track</span>
           {:else if servePlan.assessment?.status === 'early'}
             <span class="text-sky-500">· ahead</span>
           {/if}
           {#if servePlan.assessment?.ready_at}
-            <span class="opacity-60">· ready ~{fmtClock(servePlan.assessment.ready_at)}</span>
+            <span class="opacity-60">· ready ~{fmtClock(servePlan.assessment.ready_at)}{servePlan.assessment.ready_at_high - servePlan.assessment.ready_at > 600 ? '–' + fmtClock(servePlan.assessment.ready_at_high) : ''}</span>
           {/if}
         </div>
       {/if}

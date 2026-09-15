@@ -815,7 +815,7 @@ class HeaterMeterService:
             return
         # Only the meaningful bands drive transitions; prediction hiccups
         # (no_eta) leave the previous state alone so flapping stays silent.
-        if st not in ("late", "on_track", "early", "past"):
+        if st not in ("late", "at_risk", "on_track", "early", "past"):
             return
         prev = self._serve_status_prev
         self._serve_status_prev = st
@@ -827,7 +827,15 @@ class HeaterMeterService:
             return
         slack = a.get("slack_secs")
         clock = self._serve_clock()
-        if st == "late":
+        if st == "late" and a.get("plateau_temp") is not None:
+            pt = round(a["plateau_temp"])
+            self._record_event(ts, "serve_status",
+                               label=f"Levelling off near {pt}° - won't finish at this pit temp")
+            self._push(f"Running late for {clock}",
+                       f"The meat is levelling off near {pt}°. "
+                       "Raise the pit 15-25° to finish.",
+                       priority="high", tags="alarm_clock")
+        elif st == "late":
             mins = int(round(-(slack or 0) / 60))
             self._record_event(ts, "serve_status",
                                label=f"Running ~{mins} min late for {clock}")
@@ -835,7 +843,17 @@ class HeaterMeterService:
                        f"Ready looks ~{mins} min past serve time. "
                        "Wrap, bump the pit, or push dinner.",
                        priority="high", tags="alarm_clock")
-        elif st == "on_track" and prev == "late":
+        elif st == "at_risk":
+            mins = int(round(-(a.get("slack_high_secs") or 0) / 60))
+            lever = ("Wrap now to be safe." if self._stalled_channels()
+                     else "Consider bumping the pit 10-15°.")
+            self._record_event(ts, "serve_status",
+                               label=f"At risk of running late for {clock}")
+            self._push(f"Might run late for {clock}",
+                       f"If the slowdown continues, ready could be ~{mins} min "
+                       f"past serve time. {lever}",
+                       priority="default", tags="hourglass_flowing_sand")
+        elif st == "on_track" and prev in ("late", "at_risk"):
             self._record_event(ts, "serve_status",
                                label=f"Back on track for {clock}")
             self._push(f"Back on track for {clock}",
@@ -2879,6 +2897,7 @@ class HeaterMeterService:
         st = self.state.status
         env = st.pit if isinstance(st.pit, (int, float)) else st.set_point
         window = 900.0
+        stalled_chs = self._stalled_channels()
         for probe, channel in ((1, "food1"), (2, "food2"), (3, "ambient")):
             idx = probe * 2 + 1
             raw = al[idx] if idx < len(al) else None
@@ -2898,12 +2917,18 @@ class HeaterMeterService:
                 tss, vals = self.store.recent_series(channel, max(window * 2, 3600), ts)
             except Exception:
                 continue
-            p = predict.predict(tss, vals, target, env_temp=env, window_seconds=window)
+            p = predict.predict(tss, vals, target, env_temp=env,
+                                window_seconds=window,
+                                stalled=(channel in stalled_chs))
             eta = p.eta_seconds
             done_at = (ts + eta) if eta is not None else None
+            hi = p.eta_high
             self.last_predictions[channel] = {
                 "ts": ts, "eta": eta, "confidence": p.confidence,
                 "target": target, "done_at": done_at,
+                "done_at_high": (ts + hi) if hi is not None else None,
+                "stalled": bool(p.stalled), "model": p.model,
+                "plateau_temp": p.plateau_temp,
             }
             # Log the forecast to the timeline every ~10 min so the cook report
             # can show prediction-vs-actual afterwards. These events are data,

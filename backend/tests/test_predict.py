@@ -140,3 +140,68 @@ def test_not_stalled_unchanged():
     vals = [100 + i for i in range(20)]
     p = predict.predict(ts, vals, target=160, stalled=False)
     assert p.stalled is False and p.model in ("linear", "scurve")
+
+
+# -- rate-decay honesty pass ---------------------------------------------------
+
+def _approach(asymptote, start, k_per_hr, minutes, t0=0):
+    """Newton-style approach to *asymptote* from *start*, one sample a minute."""
+    import math
+    ts = [t0 + i * 60 for i in range(minutes)]
+    vals = [asymptote - (asymptote - start) * math.exp(-k_per_hr * i / 60)
+            for i in range(minutes)]
+    return ts, vals
+
+
+def test_fit_rate_decay_recovers_asymptote():
+    ts, vals = _approach(202.5, 190.0, 1.2, 70)
+    k, asym, rate = predict.fit_rate_decay(ts, vals)
+    assert k > 0 and rate > 0
+    assert abs(asym - 202.5) < 1.0
+
+
+def test_fit_rate_decay_none_when_not_rising():
+    ts = [i * 60 for i in range(70)]
+    assert predict.fit_rate_decay(ts, [160.0] * 70) is None
+    assert predict.fit_rate_decay(ts[:10], [100 + i for i in range(10)]) is None
+
+
+def test_plateau_in_final_approach():
+    # Levelling off at ~202.5 with the target at 203, inside the final 10 deg:
+    # no ETA, a plateau temperature, low confidence, the model's own estimate
+    # kept as the optimistic bound. The S-curve alone (pit 265) would have
+    # quoted a confident few minutes here.
+    ts, vals = _approach(202.5, 193.0, 1.2, 70)
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0)
+    assert p.model == "plateau"
+    assert p.eta_seconds is None and p.eta_high is None
+    assert p.confidence == "low"
+    assert p.plateau_temp is not None and abs(p.plateau_temp - 202.5) < 1.5
+    assert p.eta_low is not None and p.eta_low > 0
+    assert "plateau_temp" in p.to_dict()
+
+
+def test_plateau_keeps_stall_flag():
+    ts, vals = _approach(202.5, 193.0, 1.2, 70)
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0, stalled=True)
+    assert p.model == "plateau" and p.stalled is True
+
+
+def test_deceleration_early_in_cook_is_not_a_plateau():
+    # Slowing toward ~165 (the stall) with the target far above: not a plateau,
+    # but the estimate is no longer trustworthy - low confidence, and the
+    # pessimistic bound stretched well past the model's number.
+    ts, vals = _approach(165.0, 120.0, 0.9, 70)
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0)
+    assert p.model in ("linear", "scurve")
+    assert p.confidence == "low"
+    assert p.eta_seconds is not None
+    assert p.eta_high >= p.eta_seconds * 1.5
+
+
+def test_steady_rise_untouched_by_decay_pass():
+    ts = [i * 60 for i in range(70)]
+    vals = [100 + i * 0.5 for i in range(70)]
+    p = predict.predict(ts, vals, 160.0, env_temp=None)
+    assert p.model == "linear" and p.confidence == "high"
+    assert p.eta_high <= p.eta_seconds * 1.25
