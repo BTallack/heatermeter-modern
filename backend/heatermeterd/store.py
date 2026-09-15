@@ -357,7 +357,10 @@ class Store:
     def prune_empty_sessions(self, keep_id: Optional[int] = None) -> list:
         """Delete ended sessions in which no cook ever ran and nothing was
         written: idle logging that an older daemon wrapped in a "cook" on every
-        restart. Their samples are kept, just untagged. Returns the ids removed."""
+        restart. Their samples are kept as they are (rewriting a week of idle
+        rows to untag them is a huge write on an SD card; nothing lists a
+        session that no longer exists). Returns the ids removed. Each check
+        takes the lock briefly, so this is safe to run beside live logging."""
         with self.lock:
             rows = self.conn.execute(
                 "SELECT id FROM sessions WHERE ended_ts IS NOT NULL").fetchall()
@@ -366,7 +369,6 @@ class Store:
             if sid == keep_id or self.session_has_activity(sid):
                 continue
             with self.lock:
-                self.conn.execute("UPDATE samples SET session_id=NULL WHERE session_id=?", (sid,))
                 self.conn.execute("DELETE FROM events WHERE session_id=?", (sid,))
                 self.conn.execute("DELETE FROM sessions WHERE id=?", (sid,))
                 self.conn.commit()

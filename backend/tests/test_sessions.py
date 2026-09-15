@@ -195,7 +195,8 @@ def test_idle_session_not_resumed_starts_fresh():
     async def go():
         await svc.start()
         assert svc.session_id is None              # did NOT resume the idle one
-        # No cook ever ran in it, so it is pruned outright - samples kept, untagged.
+        # No cook ever ran in it, so it is pruned (off the loop) - samples kept.
+        await svc._prune_task
         assert store.get_session(old) is None
         assert store.count() == 2
         # Idle samples on the new grill do not open a "cook" either...

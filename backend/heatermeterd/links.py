@@ -76,8 +76,8 @@ class SerialLink:
                     if not ready:
                         continue
                     data = os.read(self._fd, 4096)
-            except (OSError, ValueError):
-                break
+            except (OSError, ValueError, TypeError):
+                break               # port closed under us (TypeError: fd is None)
             if not data:
                 if self._ser is None:
                     break  # raw fd EOF

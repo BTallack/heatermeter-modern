@@ -208,11 +208,12 @@ class HeaterMeterService:
                     (last or {}).get("ts") or self.time_fn())
         # Sessions in which no cook ever ran (idle logging wrapped in a "cook"
         # by every restart of an older daemon) are noise in Past cooks and in
-        # the averages: drop them, keeping their samples.
-        try:
-            self.store.prune_empty_sessions(keep_id=self.session_id)
-        except Exception:
-            pass
+        # the averages: drop them, keeping their samples. Scanning a big idle
+        # session for a setpoint takes seconds on a Pi, so this runs off the
+        # loop after startup rather than holding the API back.
+        keep = self.session_id
+        self._prune_task = self.loop.run_in_executor(
+            None, lambda: self._prune_empty_sessions(keep))
         # Apply the saved cook-completion config; if the resumed session was
         # already completed, suppress a duplicate completion/notification.
         self._cookdone.set_config(self._load_cookdone_file())
@@ -1325,6 +1326,19 @@ class HeaterMeterService:
         cols = self.store.history_columns(None, 6000, session_id)
         return stability.score_cook(cols)
 
+    def _score_all_ended(self, cache: dict) -> bool:
+        """Score every finished cook not yet in *cache*. Returns True if the
+        cache changed (the caller saves it)."""
+        dirty = False
+        for other in self.store.list_sessions(limit=500):
+            if not (other.get("ended_ts") or other.get("completed_ts")):
+                continue
+            key = str(other["id"])
+            if key not in cache:
+                cache[key] = self._score_session(other["id"])
+                dirty = True
+        return dirty
+
     def session_stability(self, session_id: int) -> Optional[dict]:
         """Pit-stability score for one cook plus how it ranks against the
         user's other scored cooks. An ended cook's samples never change, so its
@@ -1355,15 +1369,7 @@ class HeaterMeterService:
                 cache[key] = score
                 self._save_stability_cache(cache)
         # History: every other ended cook, scored lazily and cached.
-        dirty = False
-        for other in self.store.list_sessions(limit=500):
-            oid = other["id"]
-            if oid == session_id or not (other.get("ended_ts") or other.get("completed_ts")):
-                continue
-            if str(oid) not in cache:
-                cache[str(oid)] = self._score_session(oid)
-                dirty = True
-        if dirty:
+        if self._score_all_ended(cache):
             self._save_stability_cache(cache)
         history = [c["score"] for k, c in cache.items()
                    if k != str(session_id) and isinstance(c, dict)]
@@ -1375,11 +1381,21 @@ class HeaterMeterService:
         how long your stalls last, totals. Cheap queries over sessions+events."""
         sessions = [s for s in self.store.list_sessions()
                     if s.get("ended_ts") or s.get("completed_ts")]
-        # Duration = start to "done" for finished cooks only; a session's
-        # ended_ts is the power-loss/idle boundary, which can be days later.
-        durations = [s["completed_ts"] - s["started_ts"] for s in sessions
-                     if s.get("completed_ts") and s.get("started_ts")
-                     and s["completed_ts"] > s["started_ts"]]
+        # Duration = the time the pit actually had a setpoint (from the
+        # stability scoring, cached per finished cook); a session's span can
+        # include a day of idle logging. Cooks that never held a setpoint long
+        # enough to score fall back to start -> "done", if they were finished.
+        cache = self._load_stability_cache()
+        if self._score_all_ended(cache):
+            self._save_stability_cache(cache)
+        durations = []
+        for s in sessions:
+            sc = cache.get(str(s["id"]))
+            if isinstance(sc, dict) and sc.get("active_secs"):
+                durations.append(float(sc["active_secs"]))
+            elif (s.get("completed_ts") and s.get("started_ts")
+                  and s["completed_ts"] > s["started_ts"]):
+                durations.append(s["completed_ts"] - s["started_ts"])
         # Pair stall_start -> stall_end per session+channel for stall lengths.
         stalls = []
         for s in sessions:
@@ -2770,6 +2786,12 @@ class HeaterMeterService:
         except (TypeError, ValueError):
             return False
 
+    def _prune_empty_sessions(self, keep_id: Optional[int]) -> list:
+        try:
+            return self.store.prune_empty_sessions(keep_id=keep_id)
+        except Exception:
+            return []
+
     def _cook_is_active(self) -> bool:
         """A cook is on when the pit has a setpoint, or a food probe with a
         target is plugged in (thermometer-only use: the board watches the meat
@@ -2801,10 +2823,8 @@ class HeaterMeterService:
             # Long silence: close the stale session and start fresh.
             self.store.close_session(self.session_id, self._last_sample_ts)
             self.session_id = None
-            try:
-                self.store.prune_empty_sessions()   # if nothing ever cooked in it
-            except Exception:
-                pass
+            if self.loop is not None:               # drop it if nothing ever cooked in it
+                self.loop.run_in_executor(None, lambda: self._prune_empty_sessions(None))
         if self.session_id is None:
             if not self._cook_is_active():
                 return None

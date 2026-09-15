@@ -190,8 +190,10 @@ pairs stall durations).
   **Sessions now open only when a cook is running** (pit setpoint, or a
   targeted food probe plugged in for thermometer-only use) - every daemon
   restart while idle used to manufacture an empty "Cook #N" - and sessions in
-  which nothing ever cooked are pruned at startup, samples kept. Average cook
-  duration counts finished cooks only.
+  which nothing ever cooked are pruned at startup, samples kept (v0.11.2: the
+  prune runs off the event loop - on the Pi it held startup for 60 s in
+  v0.11.1 - and no longer rewrites the samples). Average cook duration is each
+  cook's time with a setpoint (from the stability cache), not the session span.
 
 ### Near-term priorities
 1. **Predictor cut-aware prior** (see the v0.10.0 note); re-run
