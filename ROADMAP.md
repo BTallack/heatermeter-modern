@@ -179,6 +179,19 @@ pairs stall durations).
   scoring a week-long idle session no longer drags a million rows into Python.
 - **Cook tab regrouped**: Now (Cook control, Food targets, Timers) →
   Automate (Guided Cook, Cook program) → History (Past cooks).
+- **v0.11.1 follow-ups from scoring the real cooks:** a dead fire (pit >100°
+  under set for 30 min) is excluded from the hold rather than punished (the
+  07-03 cook went from 18 to 51 on its real 1.5 h of holding, with 17 h of
+  abandoned-setpoint tail reported as fire-out); the hold is judged only once
+  the pit has settled into the band after a setpoint change (a cool-down to a
+  lower target is not "off target", and the 07-02 cook's 5-minute 150° opening
+  no longer reads as 111° of overshoot); 30 min minimum hold to score; a
+  "cook time" figure (time with a setpoint) alongside the session span.
+  **Sessions now open only when a cook is running** (pit setpoint, or a
+  targeted food probe plugged in for thermometer-only use) - every daemon
+  restart while idle used to manufacture an empty "Cook #N" - and sessions in
+  which nothing ever cooked are pruned at startup, samples kept. Average cook
+  duration counts finished cooks only.
 
 ### Near-term priorities
 1. **Predictor cut-aware prior** (see the v0.10.0 note); re-run

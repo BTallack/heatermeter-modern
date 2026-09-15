@@ -684,9 +684,13 @@
                 <div><span class="opacity-50">Food 2 max</span> <b>{insights.food2Max == null ? '—' : fmt(insights.food2Max) + '°'}</b></div>
                 <div><span class="opacity-50">Avg fan</span> <b>{insights.fanAvg == null ? '—' : fmt(insights.fanAvg) + '%'}</b></div>
                 {#if insights.stability}
+                  <div><span class="opacity-50">Cook time</span> <b>{fmtDuration(insights.stability.active_secs)}</b></div>
                   <div><span class="opacity-50">Pit steadiness</span> <b>{insights.stability.score}/100</b></div>
                   <div><span class="opacity-50">In band</span> <b>{Math.round(insights.stability.in_band_pct)}%</b></div>
                   <div><span class="opacity-50">Lid recovery</span> <b>{insights.stability.lid_recovery_secs == null ? '—' : Math.round(insights.stability.lid_recovery_secs / 60) + ' min'}</b></div>
+                  {#if insights.stability.fire_out_secs > 0}
+                    <div><span class="opacity-50">Fire out</span> <b>{fmtDuration(insights.stability.fire_out_secs)}</b> <span class="opacity-50">excluded</span></div>
+                  {/if}
                 {/if}
               </div>
               {#if insights.compare?.cooks}

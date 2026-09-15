@@ -206,6 +206,13 @@ class HeaterMeterService:
                 self.store.close_session(
                     existing["id"],
                     (last or {}).get("ts") or self.time_fn())
+        # Sessions in which no cook ever ran (idle logging wrapped in a "cook"
+        # by every restart of an older daemon) are noise in Past cooks and in
+        # the averages: drop them, keeping their samples.
+        try:
+            self.store.prune_empty_sessions(keep_id=self.session_id)
+        except Exception:
+            pass
         # Apply the saved cook-completion config; if the resumed session was
         # already completed, suppress a duplicate completion/notification.
         self._cookdone.set_config(self._load_cookdone_file())
@@ -1300,7 +1307,9 @@ class HeaterMeterService:
 
     def _load_stability_cache(self) -> dict:
         d = self._load_json_file(self.stability_cache_path) if self.stability_cache_path else None
-        return d if isinstance(d, dict) else {}
+        if not isinstance(d, dict) or d.get("_version") != stability.VERSION:
+            return {"_version": stability.VERSION}     # scoring changed: redo
+        return d
 
     def _save_stability_cache(self, d: dict) -> None:
         if not self.stability_cache_path:
@@ -1366,9 +1375,11 @@ class HeaterMeterService:
         how long your stalls last, totals. Cheap queries over sessions+events."""
         sessions = [s for s in self.store.list_sessions()
                     if s.get("ended_ts") or s.get("completed_ts")]
-        durations = [s["ended_ts"] - s["started_ts"] for s in sessions
-                     if s.get("ended_ts") and s.get("started_ts")
-                     and s["ended_ts"] > s["started_ts"]]
+        # Duration = start to "done" for finished cooks only; a session's
+        # ended_ts is the power-loss/idle boundary, which can be days later.
+        durations = [s["completed_ts"] - s["started_ts"] for s in sessions
+                     if s.get("completed_ts") and s.get("started_ts")
+                     and s["completed_ts"] > s["started_ts"]]
         # Pair stall_start -> stall_end per session+channel for stall lengths.
         stalls = []
         for s in sessions:
@@ -2759,14 +2770,44 @@ class HeaterMeterService:
         except (TypeError, ValueError):
             return False
 
-    def _ensure_session(self, ts: float) -> int:
-        """Start a new session if none is open or the idle gap has elapsed."""
+    def _cook_is_active(self) -> bool:
+        """A cook is on when the pit has a setpoint, or a food probe with a
+        target is plugged in (thermometer-only use: the board watches the meat
+        while something else holds the heat)."""
+        st = self.state.status
+        if self._sample_was_active({"set_point": st.set_point}):
+            return True
+        al = self.state.alarms or []
+        for probe, val in ((1, st.food1), (2, st.food2), (3, st.ambient)):
+            idx = probe * 2 + 1
+            if val is None or idx >= len(al):
+                continue
+            try:
+                if float(str(al[idx]).rstrip("LH")) > 0:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
+
+    def _ensure_session(self, ts: float) -> Optional[int]:
+        """The open session id, starting one when a cook is actually running
+        (see :meth:`_cook_is_active`). Idle samples are logged without a
+        session, so a restart, or a wait before the pit is lit, never
+        manufactures an empty "cook". Once open, a session keeps the cool-down
+        after the pit is turned off until the idle gap, a power loss, or
+        Finish cook ends it."""
         if (self.session_id is not None and self._last_sample_ts is not None
                 and (ts - self._last_sample_ts) > self.idle_gap):
             # Long silence: close the stale session and start fresh.
             self.store.close_session(self.session_id, self._last_sample_ts)
             self.session_id = None
+            try:
+                self.store.prune_empty_sessions()   # if nothing ever cooked in it
+            except Exception:
+                pass
         if self.session_id is None:
+            if not self._cook_is_active():
+                return None
             self.session_id = self.store.start_session(ts)
             self._cookdone.reset()   # fresh cook-completion tracking per session
             self._probewatch.reset()  # fresh probe-health tracking per cook

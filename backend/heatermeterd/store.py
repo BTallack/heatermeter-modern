@@ -334,6 +334,45 @@ class Store:
             )
             self.conn.commit()
 
+    def session_has_activity(self, session_id: int) -> bool:
+        """True if a cook actually happened in the session: a sample carried a
+        setpoint, it was marked complete, the user wrote a note, or a real cook
+        event landed (anything but the auto-recorded target/forecast entries)."""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT completed_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if row and row[0]:
+                return True
+            for q in (
+                "SELECT 1 FROM samples WHERE session_id=? AND set_point IS NOT NULL "
+                "AND set_point != 0 LIMIT 1",
+                "SELECT 1 FROM notes WHERE session_id=? LIMIT 1",
+                "SELECT 1 FROM events WHERE session_id=? AND kind NOT IN "
+                "('food_target', 'prediction') LIMIT 1",
+            ):
+                if self.conn.execute(q, (session_id,)).fetchone():
+                    return True
+        return False
+
+    def prune_empty_sessions(self, keep_id: Optional[int] = None) -> list:
+        """Delete ended sessions in which no cook ever ran and nothing was
+        written: idle logging that an older daemon wrapped in a "cook" on every
+        restart. Their samples are kept, just untagged. Returns the ids removed."""
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT id FROM sessions WHERE ended_ts IS NOT NULL").fetchall()
+        removed = []
+        for (sid,) in rows:
+            if sid == keep_id or self.session_has_activity(sid):
+                continue
+            with self.lock:
+                self.conn.execute("UPDATE samples SET session_id=NULL WHERE session_id=?", (sid,))
+                self.conn.execute("DELETE FROM events WHERE session_id=?", (sid,))
+                self.conn.execute("DELETE FROM sessions WHERE id=?", (sid,))
+                self.conn.commit()
+            removed.append(sid)
+        return removed
+
     def delete_session(self, session_id: int) -> None:
         with self.lock:
             self.conn.execute("DELETE FROM samples WHERE session_id=?", (session_id,))

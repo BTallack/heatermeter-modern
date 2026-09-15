@@ -248,7 +248,7 @@ def test_service_finish_cook():
         svc = HeaterMeterService(_FakeLink(), store, time_fn=lambda: 9000.0)
         await svc.start()
         assert svc.finish_cook()["ok"] is False            # nothing active yet
-        svc._on_line(protocol.frame("HMSU,0,200,,,75,0,0,0,0,0,4"))  # starts a session
+        svc._on_line(protocol.frame("HMSU,225,200,,,75,0,0,0,0,0,2"))  # starts a session
         r = svc.finish_cook()
         assert r["ok"] is True
         sess = store.get_session(svc.session_id)
@@ -269,7 +269,7 @@ def test_service_shutdown_writes_request():
             svc.firmware_spool = spool
             svc._shutdown_grace = 0.01
             await svc.start()
-            svc._on_line(protocol.frame("HMSU,0,200,,,75,0,0,0,0,0,4"))  # open session
+            svc._on_line(protocol.frame("HMSU,225,200,,,75,0,0,0,0,0,2"))  # open session
             sid = svc.session_id
             r = svc.shutdown_system(dryrun=True)
             assert r["ok"] is True and r["dryrun"] is True

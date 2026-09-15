@@ -201,13 +201,14 @@ def build_report_html(session: dict, columns: dict, events: list, notes: list,
     stab_html = ""
     if sc:
         parts = [f"Pit steadiness <b>{sc['score']}</b>/100",
+                 f"cook time {_fmt_dur(sc['active_secs'])}" if sc.get("active_secs") else "",
                  f"in band {sc['in_band_pct']:.0f}%",
                  f"avg error {sc['mae']:.0f}°"]
         if sc.get("lid_recovery_secs") is not None:
             parts.append(f"lid recovery {sc['lid_recovery_secs'] / 60:.0f} min")
         if cmp_ and cmp_.get("cooks"):
             parts.append(f"{e(cmp_['verdict'])} ({e(cmp_['rank'])}; your average {cmp_['avg']})")
-        stab_html = "<p class='stab'>" + " · ".join(parts) + "</p>"
+        stab_html = "<p class='stab'>" + " · ".join(p for p in parts if p) + "</p>"
     rows = "".join((
         stat_cells("pit", names[0]),
         stat_cells("food1", names[1]),

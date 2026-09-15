@@ -1,19 +1,27 @@
 """Pit-stability score for a cook (pure, unit-testable).
 
 How steadily did the controller hold the pit, judged only over the time it
-was *supposed* to be holding: after the pit first reaches the setpoint (per
-setpoint segment - a bump starts a fresh climb), and excluding the firmware's
-lid-open windows plus a short grace after each. The initial climb and the
-lid opens are the cook, not the controller, so they are scored separately
-(overshoot, lid recovery) rather than penalised as "off target".
+was *supposed* to be holding: after the pit has settled into the band around
+the setpoint (per setpoint segment - a change starts a fresh transition, up or
+down), excluding the firmware's lid-open windows plus a short grace after
+each, and excluding a dead fire (pit far under set for half an hour - that is
+fuel, not control; the guard already pages for it). The climb, the lid opens
+and the fire dying are the cook, not the controller, so they are reported
+separately (overshoot, lid recovery, fire-out time) rather than penalised as
+"off target".
 
 Metrics (board unit; defaults assume Fahrenheit):
 * in_band_pct  - share of held time within +/-BAND of the setpoint
 * mae          - mean |pit - set| over held time
-* overshoot    - largest excursion above the setpoint (lid windows excluded)
+* overshoot    - largest excursion above a setpoint the pit climbed up to
+                 (lid windows excluded; a cool-down to a lower target is not one)
 * lid_recovery - mean seconds from a lid window closing to the pit re-entering
                  the band (only lid windows that recovered count)
 * output_avg   - mean PID output over held time (fuel/air effort)
+* fire_out_secs- time excluded because the fire had died (pit > FIRE_OUT_DELTA
+                 under set for FIRE_OUT_SECS, until the next setpoint change)
+* active_secs  - time the board had a setpoint at all (the cook's real length,
+                 unlike a session span that may include a day of idle logging)
 
 The 0-100 score is deliberately simple and explainable: 60% in-band share,
 25% MAE (0 deg = full marks, 20 deg = none), 15% lid recovery (<=5 min = full,
@@ -25,11 +33,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+VERSION = 2            # bump when the scoring changes so cached scores are redone
+
 BAND = 10.0            # deg either side of set that counts as "holding"
-AT_TEMP_EPSILON = 5.0  # reaching within this of set = the climb is over
-REARM_DELTA = 10.0     # a setpoint change this big starts a new climb
+REARM_DELTA = 10.0     # a setpoint change this big starts a new transition
 LID_GRACE_SECS = 300   # after a lid window: still the cook's fault, not the PID's
-MIN_HELD_SECS = 600    # fewer held seconds than this = no meaningful score
+MIN_HELD_SECS = 1800   # fewer held seconds than this = a test, not a cook
+FIRE_OUT_DELTA = 100.0 # this far under set...
+FIRE_OUT_SECS = 1800   # ...for this long = the fire is out; stop judging the hold
 
 
 def _num(v):
@@ -49,19 +60,33 @@ def score_cook(columns: dict) -> Optional[dict]:
     lids = columns.get("lid_countdown") or []
     outs = columns.get("output_pct") or columns.get("fan_pct") or []
 
-    held_secs = 0.0
-    in_band_secs = 0.0
-    abs_err_secs = 0.0
-    out_secs = 0.0
+    # Held-time accumulators: [held, in_band, abs_err*dt, out*dt]. Samples while
+    # the pit is far under set go to *pending* first: committed if the pit
+    # comes back, discarded (and counted as fire-out) if it stays down.
+    acc = [0.0, 0.0, 0.0, 0.0]
+    pending = [0.0, 0.0, 0.0, 0.0]
     overshoot = 0.0
     recoveries: list = []
+    fire_out_secs = 0.0
+    active_secs = 0.0          # time the board had a setpoint at all
 
     sp_prev = None
-    at_temp = False
+    settled = False            # pit has been inside the band since the last setpoint change
+    climb = False              # this transition approached the setpoint from below
+    fire_out = False
+    down_since = None
     in_lid = False
     grace_until = None
     lid_closed_at = None       # waiting for the pit to re-enter the band
     setpoints: set = set()
+
+    def add(dst, dt, err, out):
+        dst[0] += dt
+        dst[2] += err * dt
+        if err <= BAND:
+            dst[1] += dt
+        if out is not None:
+            dst[3] += out * dt
 
     for k in range(n):
         sp = _num(sps[k] if k < len(sps) else None)
@@ -72,15 +97,21 @@ def score_cook(columns: dict) -> Optional[dict]:
         dt = max(0.0, min(dt, 60.0))       # a gap in the log is not held time
 
         if sp is None or sp <= 0 or pit is None:
-            at_temp = False
+            settled = False
+            fire_out = False
+            down_since = None
+            pending = [0.0, 0.0, 0.0, 0.0]
             sp_prev = None
             continue
         setpoints.add(round(sp))
-        if sp_prev is not None and abs(sp - sp_prev) >= REARM_DELTA:
-            at_temp = False
+        active_secs += dt
+        if sp_prev is None or abs(sp - sp_prev) >= REARM_DELTA:
+            settled = False              # a new target: transition, up or down
+            climb = pit < sp - BAND      # overshoot only means something climbing up to it
+            fire_out = False
+            down_since = None
+            pending = [0.0, 0.0, 0.0, 0.0]
         sp_prev = sp
-        if not at_temp and pit >= sp - AT_TEMP_EPSILON:
-            at_temp = True
 
         if lid:
             in_lid = True
@@ -94,18 +125,38 @@ def score_cook(columns: dict) -> Optional[dict]:
             lid_closed_at = None
         in_grace = grace_until is not None and t[k] < grace_until
 
-        overshoot = max(overshoot, pit - sp)
-        if not at_temp or in_grace:
-            continue                    # climb / lid recovery: not the PID's hold
+        if not settled and abs(pit - sp) <= BAND:
+            settled = True
+        if not settled:
+            continue                    # still climbing / cooling to the target
+        if climb:
+            overshoot = max(overshoot, pit - sp)
+        if in_grace:
+            continue                    # lid recovery: the cook's doing, not the PID's
+        if fire_out:
+            fire_out_secs += dt
+            continue
 
         err = abs(pit - sp)
-        held_secs += dt
-        abs_err_secs += err * dt
-        if err <= BAND:
-            in_band_secs += dt
-        if out is not None:
-            out_secs += out * dt
+        if pit < sp - FIRE_OUT_DELTA:
+            if down_since is None:
+                down_since = t[k]
+            add(pending, dt, err, out)
+            if t[k] - down_since >= FIRE_OUT_SECS:
+                fire_out = True         # the fuel is done: stop judging the hold
+                fire_out_secs += pending[0]
+                pending = [0.0, 0.0, 0.0, 0.0]
+            continue
+        if down_since is not None:      # came back: the dip was real hold time
+            for i in range(4):
+                acc[i] += pending[i]
+            pending = [0.0, 0.0, 0.0, 0.0]
+            down_since = None
+        add(acc, dt, err, out)
 
+    for i in range(4):                  # a dip still open at the end counts
+        acc[i] += pending[i]
+    held_secs, in_band_secs, abs_err_secs, out_secs = acc
     if held_secs < MIN_HELD_SECS:
         return None
     in_band_pct = 100.0 * in_band_secs / held_secs
@@ -129,6 +180,8 @@ def score_cook(columns: dict) -> Optional[dict]:
         "lid_recovery_secs": round(lid_recovery) if lid_recovery is not None else None,
         "lid_opens": len(recoveries),
         "output_avg": round(out_secs / held_secs, 1) if held_secs else None,
+        "fire_out_secs": round(fire_out_secs),
+        "active_secs": round(active_secs),
         "setpoints": sorted(setpoints),
     }
 

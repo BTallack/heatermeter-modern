@@ -143,7 +143,9 @@ def test_repeat_cook_and_insights():
     ins = svc.cook_insights()
     assert ins["cooks"] == 1 and ins["stalls_seen"] == 1
     assert ins["avg_stall_secs"] == 1800
-    assert ins["avg_duration_secs"] == 2000.0
+    assert ins["avg_duration_secs"] is None      # never marked done: no duration
+    svc.store.mark_completed(sid, 2500.0, "manual")
+    assert svc.cook_insights()["avg_duration_secs"] == 1500.0
 
     # Unknown session refused; session with no setpoint refused.
     assert not svc.repeat_cook(999)["ok"]
@@ -193,13 +195,36 @@ def test_idle_session_not_resumed_starts_fresh():
     async def go():
         await svc.start()
         assert svc.session_id is None              # did NOT resume the idle one
-        assert store.get_session(old)["ended_ts"] is not None   # closed, data kept
-        # First sample on the new grill starts a fresh session.
+        # No cook ever ran in it, so it is pruned outright - samples kept, untagged.
+        assert store.get_session(old) is None
+        assert store.count() == 2
+        # Idle samples on the new grill do not open a "cook" either...
+        svc._on_line(protocol.frame("HMSU,,70,,,,0,0,0,0,0,4"))
+        assert svc.session_id is None and store.count() == 3
+        # ...the first sample with a setpoint does.
         svc._on_line(protocol.frame("HMSU,225,210,,,,0,0,0,0,0,2"))
         assert svc.session_id is not None and svc.session_id != old
-        assert store.last_sample(old) is not None   # old data preserved
         await svc.stop()
     asyncio.run(go())
+
+
+def test_prune_keeps_cooks_and_noted_sessions():
+    s = Store(":memory:")
+    idle = s.start_session(1000.0)
+    s.insert(Status(set_point=None, pit=70), 1000.0, session_id=idle)
+    s.close_session(idle, 1100.0)
+    cook = s.start_session(2000.0)
+    s.insert(Status(set_point=225, pit=200), 2000.0, session_id=cook)
+    s.close_session(cook, 2100.0)
+    noted = s.start_session(3000.0)
+    s.insert(Status(set_point=None, pit=70), 3000.0, session_id=noted)
+    s.add_note(3001.0, "Bench test of the new probe", session_id=noted)
+    s.close_session(noted, 3100.0)
+    live = s.start_session(4000.0)
+    s.insert(Status(set_point=None, pit=70), 4000.0, session_id=live)
+    assert s.prune_empty_sessions(keep_id=live) == [idle]
+    assert {x["id"] for x in s.list_sessions()} == {cook, noted, live}
+    assert s.count() == 4                         # the idle samples survive
 
 
 def test_manual_fan_session_is_resumed():
@@ -219,3 +244,36 @@ def test_manual_fan_session_is_resumed():
         assert svc.session_id == sid
         await svc.stop()
     asyncio.run(go())
+
+
+def test_thermometer_only_cook_opens_a_session():
+    """Pit off, but a targeted food probe is plugged in: that is a cook."""
+    from heatermeterd import protocol
+    from heatermeterd.links import SimLink
+    from heatermeterd.service import HeaterMeterService
+
+    svc = HeaterMeterService(SimLink(interval=10.0), Store(":memory:"))
+    svc._push = lambda *a, **k: None
+    svc._on_line(protocol.frame("HMSU,,72,150,,,0,0,0,0,0,4"))   # probe, no target
+    assert svc.session_id is None
+    svc._on_line(protocol.frame("HMAL,-1,-1,-1,203,-1,-1,-1,-1"))
+    svc._on_line(protocol.frame("HMSU,,72,151,,,0,0,0,0,0,4"))   # probe + target
+    assert svc.session_id is not None
+
+
+def test_session_activity_rule():
+    s = Store(":memory:")
+    done = s.start_session(1000.0)
+    s.insert(Status(set_point=None, pit=70, food1=150), 1000.0, session_id=done)
+    s.mark_completed(done, 1500.0, "probe removed")
+    s.close_session(done, 1600.0)
+    evented = s.start_session(2000.0)
+    s.insert(Status(set_point=None, pit=70, food1=150), 2000.0, session_id=evented)
+    s.add_event(2001.0, "target", session_id=evented, channel="food1")
+    s.close_session(evented, 2100.0)
+    auto = s.start_session(3000.0)
+    s.insert(Status(set_point=None, pit=70), 3000.0, session_id=auto)
+    s.add_event(3001.0, "food_target", session_id=auto, channel="food1")
+    s.close_session(auto, 3100.0)
+    assert s.prune_empty_sessions() == [auto]
+

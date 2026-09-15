@@ -19,7 +19,7 @@ def test_perfect_hold_scores_100():
     pit = [100 + i * 1.25 for i in range(120)] + [250.0] * 720
     r = stability.score_cook(cols(pit))
     assert r["score"] == 100
-    assert r["in_band_pct"] == 100.0 and r["mae"] == 0.0
+    assert r["in_band_pct"] == 100.0 and r["mae"] <= 0.2   # the last in-band climb samples
     assert r["overshoot"] == 0.0 and r["lid_opens"] == 0
     assert r["held_secs"] == 720 * 10 - 10 or r["held_secs"] >= 7000
     assert r["setpoints"] == [250]
@@ -94,10 +94,45 @@ def test_no_score_without_a_held_setpoint():
 
 
 def test_log_gaps_do_not_count_as_held_time():
-    c = cols([250.0] * 100)
-    c["t"] = [i * 10 for i in range(50)] + [100000 + i * 10 for i in range(50)]
+    c = cols([250.0] * 600)
+    c["t"] = [i * 10 for i in range(300)] + [100000 + i * 10 for i in range(300)]
     r = stability.score_cook(c)
-    assert r["held_secs"] < 1200
+    assert 5900 <= r["held_secs"] <= 6060
+
+
+def test_dead_fire_is_excluded_not_penalised():
+    # 2 h steady hold, then the fuel runs out: the pit sinks to 120 with the
+    # setpoint still 250 for 6 h. The hold is judged on the 2 h; the collapse
+    # is reported as fire-out time.
+    pit = [250.0] * 720 + [250 - i * 2 for i in range(65)] + [120.0] * 2160
+    r = stability.score_cook(cols(pit))
+    assert r["score"] >= 85          # the half hour of collapse still costs a little
+    assert r["fire_out_secs"] >= 5 * 3600
+    assert r["held_secs"] < 3 * 3600
+
+
+def test_brief_deep_dip_that_recovers_counts_against_the_hold():
+    pit = [250.0] * 720 + [140.0] * 60 + [250.0] * 720
+    r = stability.score_cook(cols(pit))
+    assert r["fire_out_secs"] == 0
+    assert r["in_band_pct"] < 100.0
+
+
+def test_setpoint_drop_is_a_transition_until_settled():
+    # 250 hold, then the user drops to 200: the 30 min of cooling toward 200
+    # are not "off target", and the earlier 250 is not an overshoot of 200.
+    pit = [250.0] * 720 + [250 - i * 0.28 for i in range(180)] + [200.0] * 720
+    sp = [250.0] * 720 + [200.0] * 900
+    c = cols(pit)
+    c["set_point"] = sp
+    r = stability.score_cook(c)
+    assert r["in_band_pct"] == 100.0
+    assert r["overshoot"] == 0.0
+
+
+def test_short_hold_is_not_scored():
+    pit = [100 + i * 1.25 for i in range(120)] + [250.0] * 120   # 20 min hold
+    assert stability.score_cook(cols(pit)) is None
 
 
 def test_compare_ranks_against_history():
