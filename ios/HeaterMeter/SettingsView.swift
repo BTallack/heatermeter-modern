@@ -44,9 +44,13 @@ private struct ProbesSection: View {
             }
             Button("Save probes") { save() }
         }
-        .onAppear {
-            guard !loaded, let n = client.state?.probeNames else { return }
+        // Seed from the first status that carries names (it may land after this
+        // view appears); later updates never clobber what the user is editing.
+        .onChange(of: client.state?.probeNames, initial: true) { _, n in
+            guard !loaded, let n, !n.isEmpty else { return }
             for i in 0..<min(4, n.count) { names[i] = n[i] }
+            let o = client.state?.probeOffsets ?? []
+            for i in 0..<min(4, o.count) { offsets[i] = o[i] }
             loaded = true
         }
     }
@@ -129,16 +133,19 @@ private struct PIDSection: View {
             }
         }
         .task {
-            if !loaded {
-                presets = (try? await client.presets().pid) ?? []
-                if let pid = client.state?.pid {
-                    p = pid.p.map(trim) ?? ""; i = pid.i.map(trim) ?? ""; d = pid.d.map(trim) ?? ""
-                }
-                loaded = true
-            }
+            if presets.isEmpty { presets = (try? await client.presets().pid) ?? [] }
             await refresh()
         }
+        .onChange(of: client.state?.pid?.p, initial: true) { _, _ in seedFromState() }
         .onDisappear { poller?.cancel() }
+    }
+
+    /// Fill the fields from the first status that carries PID values (it may
+    /// arrive after the view appears); never overwrite an edit in progress.
+    private func seedFromState() {
+        guard !loaded, let pid = client.state?.pid, pid.p != nil else { return }
+        p = pid.p.map(trim) ?? ""; i = pid.i.map(trim) ?? ""; d = pid.d.map(trim) ?? ""
+        loaded = true
     }
 
     private func field(_ label: String, _ binding: Binding<String>) -> some View {
@@ -208,9 +215,12 @@ private struct UnitsSection: View {
         Section("Temperature unit") {
             Picker("Unit", selection: $unit) { Text("Fahrenheit").tag("F"); Text("Celsius").tag("C") }
                 .pickerStyle(.segmented)
-                .onChange(of: unit) { _, u in Task { try? await client.setUnits(u) } }
+                .onChange(of: unit) { _, u in
+                    guard u != client.state?.pid?.units else { return }
+                    Task { try? await client.setUnits(u) }
+                }
         }
-        .onAppear { unit = client.state?.pid?.units ?? "F" }
+        .onChange(of: client.state?.pid?.units, initial: true) { _, u in if let u { unit = u } }
     }
 }
 

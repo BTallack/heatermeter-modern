@@ -138,9 +138,10 @@ best-in-class and adding a safety net. Shipped + deployed:
 ### Near-term priorities
 1. **Validate serve-time planning + Pit Guard on a real cook** (thresholds may
    want tuning to the kamado's rhythm).
-2. **iOS app**: tap through Graph/Cook/Settings in the simulator (needs
-   `xcode-select` pointed at Xcode.app for the simulator integration), then
-   APNs push + Live Activity / Dynamic Island (daemon `apns.py` is ready).
+2. **iOS app**: all four tabs verified live (2026-09-15; Settings seeding race
+   + Cook current-session fixed). Next: APNs push + Live Activity / Dynamic
+   Island (daemon `apns.py` is ready), then serve-plan/Pit Guard status on the
+   Dashboard.
 3. Per-cook pit-stability score vs your own history; cook-tab grouping/reorder.
 
 Note: SwiftUI views + new web layouts can't be visually verified in a headless

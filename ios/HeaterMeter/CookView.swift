@@ -16,6 +16,21 @@ struct CookView: View {
     var body: some View {
         List {
             Section("Current cook") {
+                if let live {
+                    Button { detail = live } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(live.title).foregroundStyle(.primary)
+                                TimelineView(.everyMinute) { _ in
+                                    Text("Started \(live.startedDate.formatted(date: .omitted, time: .shortened)) · \(elapsed(since: live.startedDate))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Text("LIVE").font(.caption2.bold()).foregroundStyle(.orange)
+                        }
+                    }
+                }
                 if let p = activeProgram, p.running {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(p.label ?? "Program running").font(.subheadline.weight(.semibold))
@@ -25,7 +40,12 @@ struct CookView: View {
                         run { try await client.stopProgram(); await reload() }
                     }
                 }
-                Button("Finish cook") { run { try await client.finishCook(); await reload() } }
+                if live != nil {
+                    Button("Finish cook") { run { try await client.finishCook(); await reload() } }
+                } else {
+                    Text("No cook in progress. Set a pit temperature on the Dashboard to start one.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section("Start a program") {
@@ -46,10 +66,10 @@ struct CookView: View {
             }
 
             Section("Past cooks") {
-                if sessions.isEmpty {
+                if past.isEmpty {
                     Text("No cooks yet").foregroundStyle(.secondary)
                 }
-                ForEach(sessions) { s in
+                ForEach(past) { s in
                     Button { detail = s } label: { sessionRow(s) }
                 }
             }
@@ -61,6 +81,14 @@ struct CookView: View {
         .sheet(item: $detail) { s in
             SessionDetail(client: client, session: s, onChange: { Task { await reload() } })
         }
+    }
+
+    private var live: CookSession? { sessions.first(where: \.isActive) }
+    private var past: [CookSession] { sessions.filter { !$0.isActive } }
+
+    private func elapsed(since start: Date) -> String {
+        let mins = max(0, Int(Date().timeIntervalSince(start) / 60))
+        return mins < 60 ? "\(mins)m" : "\(mins / 60)h \(mins % 60)m"
     }
 
     private func sessionRow(_ s: CookSession) -> some View {

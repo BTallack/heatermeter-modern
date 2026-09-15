@@ -21,6 +21,7 @@ struct DeviceState: Decodable, Sendable {
     var sessionId: Int?
     var status: Status
     var probeNames: [String]
+    var probeOffsets: [String]   // per-probe calibration offsets, as the board reports them
     var pid: PIDValues?
     var alarms: [String]   // flat [low0,high0,low1,high1,...]
 
@@ -31,6 +32,7 @@ struct DeviceState: Decodable, Sendable {
         case sessionId = "session_id"
         case status
         case probeNames = "probe_names"
+        case probeOffsets = "probe_offsets"
         case pid
         case alarms
     }
@@ -43,6 +45,8 @@ struct DeviceState: Decodable, Sendable {
         sessionId = try c.decodeIfPresent(Int.self, forKey: .sessionId)
         status = try c.decode(Status.self, forKey: .status)
         probeNames = (try? c.decode([String].self, forKey: .probeNames)) ?? []
+        probeOffsets = (try? c.decode([String].self, forKey: .probeOffsets))
+            ?? ((try? c.decode([Double].self, forKey: .probeOffsets)) ?? []).map { String($0) }
         pid = try? c.decode(PIDValues.self, forKey: .pid)
         // alarms may arrive as strings ("203H"/"-40") or numbers; coerce to strings.
         if let s = try? c.decode([String].self, forKey: .alarms) {
