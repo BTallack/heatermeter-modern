@@ -188,8 +188,9 @@ class Store:
     def history_columns(self, since: Optional[float] = None, limit: int = 5000,
                         session_id: Optional[int] = None) -> dict:
         """Return {"t": [...], "<col>": [...], ...}. Filter by *since* (epoch) or
-        *session_id*. If more than *limit* rows match, stride down to ~*limit*."""
-        query = f"SELECT ts,{','.join(COLS)} FROM samples"
+        *session_id*. If more than *limit* rows match, stride down to ~*limit*
+        (in SQL, by rowid, so a week-long idle session doesn't drag a million
+        rows through Python just to keep a few thousand)."""
         clauses, params = [], []
         if since is not None:
             clauses.append("ts>=?")
@@ -197,15 +198,20 @@ class Store:
         if session_id is not None:
             clauses.append("session_id=?")
             params.append(session_id)
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY ts"
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         with self.lock:
+            step = 1
+            if limit:
+                count = self.conn.execute(
+                    f"SELECT COUNT(*) FROM samples{where}", params).fetchone()[0]
+                if count > limit:
+                    step = count // limit + 1
+            query = f"SELECT ts,{','.join(COLS)} FROM samples{where}"
+            if step > 1:
+                query += (" AND " if where else " WHERE ") + "(rowid % ?) = 0"
+                params = params + [step]
+            query += " ORDER BY ts"
             rows = self.conn.execute(query, params).fetchall()
-
-        if limit and len(rows) > limit:
-            step = len(rows) // limit + 1
-            rows = rows[::step]
 
         out: dict = {"t": []}
         for c in COLS:

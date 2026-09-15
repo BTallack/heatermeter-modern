@@ -166,6 +166,20 @@ catalog: pork shoulder at 265° ≈ 1.5-2 h/lb incl. stall) blended with the
 physics models, tightened by the user's own history (`/api/insights` already
 pairs stall durations).
 
+### Status (2026-09-15): v0.11.0 Pit-stability score + Cook tab regrouped
+- **Pit steadiness score** (`stability.py`, pure): 0-100 per cook, judged only
+  over time the controller was supposed to be holding (after at-temp per
+  setpoint segment; lid windows + 5 min grace excluded). 60% share of held time
+  within ±10°, 25% mean error, 15% lid recovery time. Reports in-band %, MAE,
+  overshoot, lid recovery, output effort. `GET /api/sessions/{id}/stability`
+  ranks it against your other cooks ("steadier than usual, 2 of 5"); ended
+  cooks are cached in `stability.json`, the live cook rescored once a minute.
+  Shown live on the Cook control card, in each past cook's insights, and on
+  the printable report. `history_columns` now strides in SQL (rowid), so
+  scoring a week-long idle session no longer drags a million rows into Python.
+- **Cook tab regrouped**: Now (Cook control, Food targets, Timers) →
+  Automate (Guided Cook, Cook program) → History (Past cooks).
+
 ### Near-term priorities
 1. **Predictor cut-aware prior** (see the v0.10.0 note); re-run
    `tools/replay_cook.py` after the next real cook to check the plateau and
@@ -174,7 +188,8 @@ pairs stall durations).
    + Cook current-session fixed). Next: APNs push + Live Activity / Dynamic
    Island (daemon `apns.py` is ready), then serve-plan/Pit Guard status on the
    Dashboard.
-3. Per-cook pit-stability score vs your own history; cook-tab grouping/reorder.
+3. Live Activity / APNs for iOS (daemon side ready); serve-plan + Pit Guard
+   status cards in the iOS app.
 
 Note: SwiftUI views + new web layouts can't be visually verified in a headless
 session, so those are done when the UI can be seen; backend/testable work proceeds

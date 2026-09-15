@@ -20,7 +20,7 @@ import time
 from typing import Callable, Optional
 
 from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
-               lidrecovery, pitguard, powerup, probewatch, protocol, serveplan)
+               lidrecovery, pitguard, powerup, probewatch, protocol, serveplan, stability)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
@@ -108,6 +108,8 @@ class HeaterMeterService:
         # Power-up policy (see powerup.py): decided once on the first status
         # after start - resume a blipped cook, idle a stale EEPROM setpoint.
         self.powerup_config_path: Optional[str] = None
+        self.stability_cache_path: Optional[str] = None
+        self._stability_live: tuple = (0.0, None)   # (computed_ts, result) for the live cook
         self._powerup_cfg: dict = powerup.sanitize({})
         self._powerup_pending = False
         self._powerup_last: tuple = (None, None)   # (last sample ts, set_point)
@@ -1291,6 +1293,73 @@ class HeaterMeterService:
                            label=f"Repeating cook: {s.get('name') or session_id}")
         return {"ok": True, "setpoint": round(sp),
                 "targets": {k: round(float(v)) for k, v in targets.items()}}
+
+    # -- pit-stability score -------------------------------------------------
+
+    STABILITY_LIVE_TTL = 60.0
+
+    def _load_stability_cache(self) -> dict:
+        d = self._load_json_file(self.stability_cache_path) if self.stability_cache_path else None
+        return d if isinstance(d, dict) else {}
+
+    def _save_stability_cache(self, d: dict) -> None:
+        if not self.stability_cache_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.stability_cache_path) or ".", exist_ok=True)
+            with open(self.stability_cache_path, "w") as f:
+                json.dump(d, f)
+        except Exception:
+            pass
+
+    def _score_session(self, session_id: int) -> Optional[dict]:
+        cols = self.store.history_columns(None, 6000, session_id)
+        return stability.score_cook(cols)
+
+    def session_stability(self, session_id: int) -> Optional[dict]:
+        """Pit-stability score for one cook plus how it ranks against the
+        user's other scored cooks. An ended cook's samples never change, so its
+        score is cached for good in stability.json; the live cook is rescored
+        at most once a minute. Returns None for an unknown session."""
+        s = self.store.get_session(session_id)
+        if not s:
+            return None
+        cache = self._load_stability_cache()
+        # "Finish cook" stamps completed_ts while the session stays open for
+        # samples until the board idles; the cook is over either way, so the
+        # score freezes at that point.
+        live = not (s.get("ended_ts") or s.get("completed_ts"))
+        now = self.time_fn()
+        if live:
+            ts, cached = self._stability_live
+            if cached is not None and (now - ts) < self.STABILITY_LIVE_TTL:
+                score = cached
+            else:
+                score = self._score_session(session_id)
+                self._stability_live = (now, score)
+        else:
+            key = str(session_id)
+            if key in cache:
+                score = cache[key]
+            else:
+                score = self._score_session(session_id)
+                cache[key] = score
+                self._save_stability_cache(cache)
+        # History: every other ended cook, scored lazily and cached.
+        dirty = False
+        for other in self.store.list_sessions(limit=500):
+            oid = other["id"]
+            if oid == session_id or not (other.get("ended_ts") or other.get("completed_ts")):
+                continue
+            if str(oid) not in cache:
+                cache[str(oid)] = self._score_session(oid)
+                dirty = True
+        if dirty:
+            self._save_stability_cache(cache)
+        history = [c["score"] for k, c in cache.items()
+                   if k != str(session_id) and isinstance(c, dict)]
+        return {"session_id": session_id, "live": live, "stability": score,
+                "compare": stability.compare(score["score"], history) if score else None}
 
     def cook_insights(self) -> dict:
         """Aggregate learning across completed cooks: how long your cooks run,

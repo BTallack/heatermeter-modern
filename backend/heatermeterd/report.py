@@ -194,6 +194,20 @@ def build_report_html(session: dict, columns: dict, events: list, notes: list,
 
     fan = stats.get("fan_pct")
     completed = session.get("completed_ts")
+    # Pit-stability score (service.session_stability), when the caller has it.
+    stab = (insights or {}).get("stability") or {}
+    sc = stab.get("stability") if isinstance(stab, dict) else None
+    cmp_ = stab.get("compare") if isinstance(stab, dict) else None
+    stab_html = ""
+    if sc:
+        parts = [f"Pit steadiness <b>{sc['score']}</b>/100",
+                 f"in band {sc['in_band_pct']:.0f}%",
+                 f"avg error {sc['mae']:.0f}°"]
+        if sc.get("lid_recovery_secs") is not None:
+            parts.append(f"lid recovery {sc['lid_recovery_secs'] / 60:.0f} min")
+        if cmp_ and cmp_.get("cooks"):
+            parts.append(f"{e(cmp_['verdict'])} ({e(cmp_['rank'])}; your average {cmp_['avg']})")
+        stab_html = "<p class='stab'>" + " · ".join(parts) + "</p>"
     rows = "".join((
         stat_cells("pit", names[0]),
         stat_cells("food1", names[1]),
@@ -278,6 +292,7 @@ def build_report_html(session: dict, columns: dict, events: list, notes: list,
 {rows}
 {f"<tr><td>Fan</td><td>{fan['min']:.0f}%</td><td>{fan['avg']:.0f}%</td><td>{fan['max']:.0f}%</td></tr>" if fan else ""}
 </table>
+{stab_html}
 {f"<h2>Prediction accuracy</h2><ul>{acc_rows}</ul>" if acc_rows else ""}
 {f"<h2>Timeline</h2><ul>{ev_rows}</ul>" if ev_rows else ""}
 {f"<h2>Notes</h2><ul>{note_rows}</ul>" if note_rows else ""}

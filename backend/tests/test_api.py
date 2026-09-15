@@ -568,3 +568,22 @@ def test_auth_gate():
             tok = login.json()["token"]
             assert c.get("/api/status", headers={"Authorization": "Bearer " + tok}).status_code == 200
             assert c.post("/api/login", json={"password": "nope"}).status_code == 401
+
+
+def test_session_stability_api():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+    from heatermeterd.api import create_app
+
+    link = SimLink(setpoint=225.0, interval=0.05, seed=1)
+    svc = HeaterMeterService(link, Store(":memory:"))
+    app = create_app(svc)
+    with TestClient(app) as c:
+        assert c.get("/api/sessions/999999/stability").status_code == 404
+        time.sleep(0.5)
+        ss = c.get("/api/sessions").json()
+        assert ss, "the simulated cook should have opened a session"
+        r = c.get(f"/api/sessions/{ss[0]['id']}/stability")
+        assert r.status_code == 200
+        assert set(r.json()) >= {"session_id", "live", "stability", "compare"}

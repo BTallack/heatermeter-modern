@@ -221,7 +221,10 @@
     if (insightsFor === s.id) { insightsFor = null; insights = null; return; }
     insightsFor = s.id; insights = null;
     try {
-      const h = await getJSON(`history?session_id=${s.id}&limit=20000`);
+      const [h, st] = await Promise.all([
+        getJSON(`history?session_id=${s.id}&limit=20000`),
+        getJSON(`sessions/${s.id}/stability`).catch(() => null),
+      ]);
       const t = h.t || [], pit = _nums(h.pit), f1 = _nums(h.food1), f2 = _nums(h.food2), fan = _nums(h.fan_pct);
       const dur = ((s.ended_ts || t[t.length - 1]) || 0) - ((s.started_ts || t[0]) || 0);
       insights = {
@@ -229,9 +232,19 @@
         pitAvg: _avg(pit), pitMin: pit.length ? Math.min(...pit) : null, pitMax: pit.length ? Math.max(...pit) : null,
         food1Max: f1.length ? Math.max(...f1) : null, food2Max: f2.length ? Math.max(...f2) : null,
         fanAvg: _avg(fan),
+        stability: st?.stability || null, compare: st?.compare || null,
       };
     } catch (_) { insights = { error: true }; }
   }
+
+  // -- pit-stability score for the live cook (refreshed every minute) ----------
+  let liveStab = $state(null);
+  let stabTimer;
+  async function refreshLiveStab() {
+    if (!liveSession || !pitOn) { liveStab = null; return; }
+    try { liveStab = await getJSON(`sessions/${liveSession.id}/stability`); } catch (_) {}
+  }
+  $effect(() => { liveSession; pitOn; refreshLiveStab(); });
 
   // -- cook insights + repeat ---------------------------------------------------
   let cookStats = $state(null);
@@ -299,8 +312,9 @@
     });
     progTimer = setInterval(loadProgram, 5000);
     timerTick = setInterval(tickTimers, 1000);
+    stabTimer = setInterval(refreshLiveStab, 60000);
   });
-  onDestroy(() => { stop && stop(); clearInterval(progTimer); clearInterval(timerTick); });
+  onDestroy(() => { stop && stop(); clearInterval(progTimer); clearInterval(timerTick); clearInterval(stabTimer); });
 
   // -- kitchen timers (reminders) --------------------------------------------
   const TIMER_KEY = 'hm.timers';
@@ -365,6 +379,11 @@
         {fmt(status.pit)}°<span class="text-base font-normal opacity-50"> / {fmt(status.set_point)}°{unit}</span>
       </div>
       <div class="text-xs opacity-50">{status.pid_mode_label || ''}{liveSession ? ' · ' + fmtElapsed(liveSession.started_ts) : ''}</div>
+      {#if liveStab?.stability}
+        <div class="text-xs mt-1 tabular-nums">
+          <span class="opacity-60">Pit steadiness</span> <b>{liveStab.stability.score}</b><span class="opacity-50">/100 · in band {Math.round(liveStab.stability.in_band_pct)}%{liveStab.compare?.cooks ? ' · ' + liveStab.compare.verdict : ''}</span>
+        </div>
+      {/if}
       {#if cookContext}
         <div class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-full bg-orange-500/15 text-orange-700 dark:text-orange-300 px-2.5 py-1">{cookContext}</div>
       {/if}
@@ -425,6 +444,53 @@
     {/if}
   </div>
 
+  <!-- Targets -->
+  <div class="hm-card rounded-2xl p-4">
+    <h3 class="font-bold mb-3">Food targets</h3>
+    {#each probeRows as r}
+      <div class="flex items-center gap-2 mb-2">
+        <span class="w-24 text-sm opacity-70 truncate">{r.label}</span>
+        <span class="w-12 text-sm tabular-nums opacity-50">{fmt(r.temp)}°</span>
+        <select class="hm-card rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0"
+                onchange={(e) => { if (e.target.value) r.set(e.target.value); }}>
+          <option value="">Preset…</option>
+          {#each meat as m}<option value={m.temp_f}>{m.label} ({m.temp_f}°)</option>{/each}
+        </select>
+        <input class="w-16 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg py-1.5 tabular-nums"
+               type="number" placeholder="°" value={r.get()} oninput={(e) => r.set(e.target.value)} />
+      </div>
+    {/each}
+    <label class="flex items-center gap-2 text-sm mt-3">
+      <input type="checkbox" checked={ambFood} onchange={toggleAmb} />
+      Use Ambient probe as a food probe
+    </label>
+    <button class="mt-3 w-full py-2.5 rounded-xl bg-orange-600 text-white font-semibold" onclick={saveTargets}>Save targets</button>
+  </div>
+
+  <!-- Timers -->
+  <div class="hm-card rounded-2xl p-4">
+    <h3 class="font-bold mb-3">Timers</h3>
+    <div class="flex gap-2">
+      <input class="flex-1 min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" placeholder="Label (e.g. spritz)" bind:value={timerName} />
+      <input class="w-20 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg py-2 tabular-nums" type="number" min="1" bind:value={timerMin} />
+      <span class="self-center text-sm opacity-50">min</span>
+      <button class="px-4 rounded-lg bg-orange-600 text-white font-semibold text-sm" onclick={addTimer}>Start</button>
+    </div>
+    {#if timers.length}
+      <div class="mt-3 space-y-1">
+        {#each timers as t (t.id)}
+          <div class="flex items-center gap-2 py-1.5 text-sm {t.done ? 'text-red-500 font-semibold' : ''}">
+            <span class="flex-1 truncate">{t.name}</span>
+            <span class="tabular-nums">{t.done ? 'DONE' : fmtRemain(t.endTs)}</span>
+            <button class="text-xs px-2 py-1 rounded {t.done ? 'bg-red-500/15' : 'text-red-500'}" onclick={() => removeTimer(t.id)}>{t.done ? 'Dismiss' : '✕'}</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  <p class="text-[11px] font-semibold uppercase tracking-wider opacity-40 px-1 -mb-3">Automate</p>
+
   <!-- Guided Cook -->
   <div class="hm-card rounded-2xl p-4">
     <h3 class="font-bold mb-1">Guided Cook</h3>
@@ -476,29 +542,6 @@
       <label class="flex items-center gap-2 text-sm mt-2"><input type="checkbox" bind:checked={guidedKeepWarm} /> Drop pit to keep-warm when the food hits its target</label>
       <button class="mt-2 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full disabled:opacity-40" disabled={!guidedSel} onclick={startGuided}>Start Guided Cook</button>
     {/if}
-  </div>
-
-  <!-- Targets -->
-  <div class="hm-card rounded-2xl p-4">
-    <h3 class="font-bold mb-3">Food targets</h3>
-    {#each probeRows as r}
-      <div class="flex items-center gap-2 mb-2">
-        <span class="w-24 text-sm opacity-70 truncate">{r.label}</span>
-        <span class="w-12 text-sm tabular-nums opacity-50">{fmt(r.temp)}°</span>
-        <select class="hm-card rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0"
-                onchange={(e) => { if (e.target.value) r.set(e.target.value); }}>
-          <option value="">Preset…</option>
-          {#each meat as m}<option value={m.temp_f}>{m.label} ({m.temp_f}°)</option>{/each}
-        </select>
-        <input class="w-16 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg py-1.5 tabular-nums"
-               type="number" placeholder="°" value={r.get()} oninput={(e) => r.set(e.target.value)} />
-      </div>
-    {/each}
-    <label class="flex items-center gap-2 text-sm mt-3">
-      <input type="checkbox" checked={ambFood} onchange={toggleAmb} />
-      Use Ambient probe as a food probe
-    </label>
-    <button class="mt-3 w-full py-2.5 rounded-xl bg-orange-600 text-white font-semibold" onclick={saveTargets}>Save targets</button>
   </div>
 
   <!-- Cook program -->
@@ -593,6 +636,8 @@
     {/if}
   </div>
 
+  <p class="text-[11px] font-semibold uppercase tracking-wider opacity-40 px-1 -mb-3">History</p>
+
   <!-- Sessions -->
   <div class="hm-card rounded-2xl p-4">
     <div class="flex items-center justify-between mb-3">
@@ -638,33 +683,20 @@
                 <div><span class="opacity-50">Food 1 max</span> <b>{insights.food1Max == null ? '—' : fmt(insights.food1Max) + '°'}</b></div>
                 <div><span class="opacity-50">Food 2 max</span> <b>{insights.food2Max == null ? '—' : fmt(insights.food2Max) + '°'}</b></div>
                 <div><span class="opacity-50">Avg fan</span> <b>{insights.fanAvg == null ? '—' : fmt(insights.fanAvg) + '%'}</b></div>
+                {#if insights.stability}
+                  <div><span class="opacity-50">Pit steadiness</span> <b>{insights.stability.score}/100</b></div>
+                  <div><span class="opacity-50">In band</span> <b>{Math.round(insights.stability.in_band_pct)}%</b></div>
+                  <div><span class="opacity-50">Lid recovery</span> <b>{insights.stability.lid_recovery_secs == null ? '—' : Math.round(insights.stability.lid_recovery_secs / 60) + ' min'}</b></div>
+                {/if}
               </div>
+              {#if insights.compare?.cooks}
+                <div class="mt-1.5 opacity-70">{insights.compare.verdict} · {insights.compare.rank} cooks · your average {insights.compare.avg}</div>
+              {/if}
             {/if}
           </div>
         {/if}
       </div>
     {/each}
-  </div>
-  <!-- Timers -->
-  <div class="hm-card rounded-2xl p-4">
-    <h3 class="font-bold mb-3">Timers</h3>
-    <div class="flex gap-2">
-      <input class="flex-1 min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" placeholder="Label (e.g. spritz)" bind:value={timerName} />
-      <input class="w-20 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg py-2 tabular-nums" type="number" min="1" bind:value={timerMin} />
-      <span class="self-center text-sm opacity-50">min</span>
-      <button class="px-4 rounded-lg bg-orange-600 text-white font-semibold text-sm" onclick={addTimer}>Start</button>
-    </div>
-    {#if timers.length}
-      <div class="mt-3 space-y-1">
-        {#each timers as t (t.id)}
-          <div class="flex items-center gap-2 py-1.5 text-sm {t.done ? 'text-red-500 font-semibold' : ''}">
-            <span class="flex-1 truncate">{t.name}</span>
-            <span class="tabular-nums">{t.done ? 'DONE' : fmtRemain(t.endTs)}</span>
-            <button class="text-xs px-2 py-1 rounded {t.done ? 'bg-red-500/15' : 'text-red-500'}" onclick={() => removeTimer(t.id)}>{t.done ? 'Dismiss' : '✕'}</button>
-          </div>
-        {/each}
-      </div>
-    {/if}
   </div>
 </div>
 

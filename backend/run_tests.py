@@ -59,6 +59,7 @@ TEST_MODULES = [
     "test_pitguard",
     "test_serveplan",
     "test_powerup",
+    "test_stability",
     "test_probewatch",
     "test_guided",
     "test_fuel",

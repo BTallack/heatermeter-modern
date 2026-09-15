@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -399,10 +399,12 @@ def create_app(service) -> FastAPI:
         evs = await asyncio.to_thread(
             service.store.list_events, session_id, None, 1000)
         nts = await asyncio.to_thread(service.store.list_notes, session_id)
+        stab = await asyncio.to_thread(service.session_stability, session_id)
         page = report.build_report_html(
             s, cols, evs, nts,
             probe_names=service.state.probe_names or None,
-            unit=(service.state.pid.get("units") or "F"))
+            unit=(service.state.pid.get("units") or "F"),
+            insights={"stability": stab})
         return HTMLResponse(page)
 
     # -- control -----------------------------------------------------------
@@ -973,6 +975,15 @@ def create_app(service) -> FastAPI:
             return JSONResponse({"error": "not found"}, status_code=404)
         s["notes"] = await asyncio.to_thread(service.store.list_notes, session_id)
         return s
+
+    @app.get("/api/sessions/{session_id}/stability")
+    async def get_session_stability(session_id: int):
+        """How steadily the pit was held during this cook (0-100) and how that
+        ranks against the user's other cooks. See stability.py."""
+        r = await asyncio.to_thread(service.session_stability, session_id)
+        if r is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return r
 
     @app.patch("/api/sessions/{session_id}")
     async def patch_session(session_id: int, body: SessionPatch):

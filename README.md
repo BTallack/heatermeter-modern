@@ -71,7 +71,8 @@ python3 run_tests.py        # pure suite, no dependencies required
   milestone - the stall, the wrap (with an "I wrapped it" confirm), the pull,
   and the rest - in the app, by push, and on the LCD. Optional auto keep-warm
   the moment the food hits its target.
-- **Cook intelligence:** stall-aware time-to-done predictions with a done-by
+- **Cook intelligence:** a pit-steadiness score per cook ranked against your own
+  history; stall-aware time-to-done predictions with a done-by
   clock, automatic stall detection, charcoal/fuel monitoring with an "add fuel"
   alert from blower effort, probe-dropout/fault alerts, and Meater-style
   automatic cook completion when the probe is pulled.
