@@ -24,6 +24,7 @@ struct DashboardView: View {
                     ProgressView("Connecting…").padding(.top, 60)
                 } else {
                     pitHero
+                    guardAndPlan
                     controlRow
                     probeGrid
                     if let m = status?.pidModeLabel {
@@ -46,6 +47,60 @@ struct DashboardView: View {
         .sheet(item: $editProbe) { p in
             ProbeEditor(client: client, probe: p, meat: meat,
                         currentTarget: client.state?.target(forProbe: p.probeIndex))
+        }
+    }
+
+    // MARK: Pit Guard + serve plan
+
+    @ViewBuilder
+    private var guardAndPlan: some View {
+        if let g = client.state?.pitGuard, g.fireDying || g.low || g.overtemp {
+            let warn = g.low && !g.fireDying
+            let text = g.fireDying ? "Fire dying — fan maxed" : (g.low ? "Pit running low" : "Pit running hot")
+            Label(text, systemImage: g.overtemp && !g.low ? "thermometer.sun.fill" : "flame.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(warn ? Color.orange : Color.red)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background((warn ? Color.orange : Color.red).opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 12))
+        }
+        if let sp = client.state?.servePlan, sp.enabled == true, let ts = sp.serveTs {
+            let a = sp.assessment
+            HStack(spacing: 6) {
+                Text("Dinner \(clock(ts))").fontWeight(.semibold)
+                if let st = a?.status, !serveLabel(st, plateau: a?.plateauTemp).isEmpty {
+                    Text(serveLabel(st, plateau: a?.plateauTemp)).foregroundStyle(serveColor(st))
+                }
+                if let r = a?.readyAt {
+                    let hi = a?.readyAtHigh
+                    let range = hi.map { $0 - r > 600 ? "–\(clock($0))" : "" } ?? ""
+                    Text("· ready ~\(clock(r))\(range)").foregroundStyle(.secondary)
+                }
+            }
+            .font(.footnote)
+        }
+    }
+
+    private func clock(_ epoch: Double) -> String {
+        Date(timeIntervalSince1970: epoch).formatted(date: .omitted, time: .shortened)
+    }
+    private func serveLabel(_ st: String, plateau: Double?) -> String {
+        switch st {
+        case "late": return plateau != nil ? "· levelling off" : "· running late"
+        case "at_risk": return "· may run late"
+        case "on_track": return "· on track"
+        case "early": return "· ahead"
+        default: return ""
+        }
+    }
+    private func serveColor(_ st: String) -> Color {
+        switch st {
+        case "late": return .red
+        case "at_risk": return .orange
+        case "on_track": return .green
+        case "early": return .blue
+        default: return .secondary
         }
     }
 

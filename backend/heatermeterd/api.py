@@ -23,7 +23,7 @@ from .service import WS_SHUTDOWN
 
 # Host app version (shown in the dashboard's About screen, distinct from the
 # board firmware version reported in $UCID).
-APP_VERSION = "0.11.2"
+APP_VERSION = "0.12.0"
 
 
 # -- request bodies ---------------------------------------------------------
@@ -160,6 +160,7 @@ class UIPrefsBody(BaseModel):
 class PushRegisterBody(BaseModel):
     token: str                          # APNs device token (hex)
     platform: str = "ios"
+    kind: str = "alert"                 # "alert" (device) | "liveactivity" (ActivityKit push token)
 
 
 class PushConfigBody(BaseModel):
@@ -367,6 +368,7 @@ def create_app(service) -> FastAPI:
         d["serve_plan"] = service.serveplan_status()
         d["fuel"] = service.fuel_status()
         d["probe_preset_sel"] = service.get_probe_presets_sel()
+        d["pit_guard"] = service._pitguard.status()
         return d
 
     @app.get("/api/history")
@@ -872,7 +874,8 @@ def create_app(service) -> FastAPI:
         except Exception:
             pass
         p = predict.predict(ts, vals, target, env_temp=env,
-                            window_seconds=window, stalled=stalled)
+                            window_seconds=window, stalled=stalled,
+                            prior=service._prior_for(channel, target, now))
         d = p.to_dict()
         # Wall-clock framing: when the food will hit target, and when it is
         # ready to eat after an optional rest (carryover happens during rest).
@@ -1197,10 +1200,17 @@ def create_app(service) -> FastAPI:
 
     @app.post("/api/push/register")
     async def register_push(body: PushRegisterBody):
-        result = service.register_push_token(body.token, body.platform)
+        result = service.register_push_token(body.token, body.platform, body.kind)
         if not result.get("ok"):
             return JSONResponse(result, status_code=400)
         return result
+
+    @app.get("/api/live-activity")
+    async def live_activity_state():
+        """The Live Activity content state (what the iOS lock-screen / Dynamic
+        Island view shows); the app renders this locally while in the
+        foreground and receives the same shape by push when it is not."""
+        return service.live_activity_state()
 
     @app.post("/api/push/test")
     async def test_push():

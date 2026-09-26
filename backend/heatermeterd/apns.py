@@ -87,19 +87,25 @@ class PushRegistry:
                 self.tokens.append({
                     "token": str(t["token"]),
                     "platform": str(t.get("platform") or "ios"),
+                    "kind": str(t.get("kind") or "alert"),
                     "added_ts": float(t.get("added_ts") or 0.0),
                 })
 
     def register(self, token: str, platform: str = "ios",
-                 now: float = 0.0) -> bool:
+                 now: float = 0.0, kind: str = "alert") -> bool:
         """Add or refresh *token*. Returns True if anything changed. Re-pushes
-        the token to the end (most-recent) and evicts the oldest past the cap."""
+        the token to the end (most-recent) and evicts the oldest past the cap.
+        *kind* is ``alert`` (a device token) or ``liveactivity`` (an ActivityKit
+        push token, which has its own APNs topic and payload shape)."""
         token = (token or "").strip()
         if not token:
             return False
+        if kind not in ("alert", "liveactivity"):
+            kind = "alert"
         self.tokens = [t for t in self.tokens if t["token"] != token]
         self.tokens.append({"token": token,
                             "platform": (platform or "ios"),
+                            "kind": kind,
                             "added_ts": float(now)})
         if len(self.tokens) > self.max_tokens:
             self.tokens = self.tokens[-self.max_tokens:]
@@ -112,8 +118,9 @@ class PushRegistry:
         self.tokens = [t for t in self.tokens if t["token"] != token]
         return len(self.tokens) != before
 
-    def all_tokens(self) -> list[str]:
-        return [t["token"] for t in self.tokens]
+    def all_tokens(self, kind: Optional[str] = None) -> list[str]:
+        return [t["token"] for t in self.tokens
+                if kind is None or t.get("kind", "alert") == kind]
 
     def to_list(self) -> list[dict]:
         return [dict(t) for t in self.tokens]
@@ -169,21 +176,29 @@ def alert_payload(title: str, body: str, *, priority: str = "default",
 
 
 def liveactivity_content_state(status: dict,
-                               predicted_done_by: Optional[dict] = None) -> dict:
+                               predicted_done_by: Optional[dict] = None,
+                               alert: Optional[str] = None,
+                               probe_names: Optional[list] = None) -> dict:
     """The ActivityKit ``content-state`` for the live cook view: what the Swift
-    ``ActivityAttributes.ContentState`` decodes. Only the fields a glanceable
-    lock-screen / Dynamic Island view needs."""
+    ``CookActivityAttributes.ContentState`` decodes. Only the fields a
+    glanceable lock-screen / Dynamic Island view needs. Predicted-done values
+    are epoch seconds (Swift decodes them as Date). *alert* is a short status
+    line ("Pit running low", "Levelling off ~202°") or None."""
     pdone = predicted_done_by or {}
+    names = list(probe_names or [])
     return {
         "pit": status.get("pit"),
         "setpoint": status.get("set_point"),
         "food1": status.get("food1"),
         "food2": status.get("food2"),
+        "food1Name": names[1] if len(names) > 1 else None,
+        "food2Name": names[2] if len(names) > 2 else None,
         "fanPct": status.get("fan_pct"),
         "lidOpen": bool(status.get("lid_countdown") or 0),
         "mode": status.get("pid_mode_label"),
         "predictedDoneFood1": pdone.get("food1"),
         "predictedDoneFood2": pdone.get("food2"),
+        "alert": alert,
     }
 
 

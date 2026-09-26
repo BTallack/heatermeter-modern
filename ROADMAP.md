@@ -195,16 +195,44 @@ pairs stall durations).
   v0.11.1 - and no longer rewrites the samples). Average cook duration is each
   cook's time with a setpoint (from the stability cache), not the session span.
 
+### Status (2026-09-26): v0.12.0 Cut-aware prior, Live Activity, Pit Guard everywhere
+- **Cut-aware time-to-done prior** (`cookprior.py`): a cook has a *shape* -
+  the fraction of the temperature rise against the fraction of the time, stall
+  included - and the cook's own progress so far scales it, so weight and pit
+  temperature never need to be known. Profiles: pulled (from the real 07-02
+  pork shoulder), ribs, roast; picked from the probe's name (meat preset) and
+  target. The physics estimate is blended geometrically by remaining gap (prior
+  dominates >40° out, ignored <8°), and disagreement lowers confidence. **It
+  learns**: when a food probe reaches its target, that cook's curve is folded
+  into the user's profile (`cookprior.json`; shown as "learned N cook shapes"
+  in the Cook tab). Anchors on the probe's first reading of the session, not on
+  when the target was set. Honest caveat: the pulled default came from the one
+  full cook on record, so its real test is the next one.
+- **iOS Live Activity + push**: a widget extension renders the cook on the Lock
+  Screen and in the Dynamic Island (pit vs set, food temps with done-by clocks,
+  Pit Guard / levelling-off alert line); the app starts/updates/ends it from
+  `/api/live-activity` while open, and the daemon pushes the same content state
+  (`kind: liveactivity` tokens, `event: end` on cook complete). Device-token
+  registration and the permission flow are in Settings. Verified in the
+  simulator against a locally simulated daemon (push itself needs a device +
+  APNs credentials on the Pi).
+- **Pit Guard state** is now in `/api/status` and the WebSocket state
+  (`pit_guard`), shown as a chip on the web Dashboard and a banner in the iOS
+  app, which also shows the serve-time plan line.
+- Not deployed to the Pi yet: it was unreachable from the dev machine on
+  2026-09-26 - deploy v0.12.0 when it is back (or use the in-app updater).
+
 ### Near-term priorities
-1. **Predictor cut-aware prior** (see the v0.10.0 note); re-run
-   `tools/replay_cook.py` after the next real cook to check the plateau and
-   at-risk calls in the wild.
+1. **After the next real cook**: run `tools/replay_cook.py` on it to check
+   the plateau / at-risk calls and the cut-aware prior's early estimates in the
+   wild; confirm "learned 1 pulled cook shape" appeared.
 2. **iOS app**: all four tabs verified live (2026-09-15; Settings seeding race
    + Cook current-session fixed). Next: APNs push + Live Activity / Dynamic
    Island (daemon `apns.py` is ready), then serve-plan/Pit Guard status on the
    Dashboard.
-3. Live Activity / APNs for iOS (daemon side ready); serve-plan + Pit Guard
-   status cards in the iOS app.
+3. iOS on a real device: set a signing Team, `POST /api/push` the APNs
+   credentials on the Pi, and confirm Live Activity pushes arrive with the app
+   closed. Then Bonjour discovery + an app icon.
 
 Note: SwiftUI views + new web layouts can't be visually verified in a headless
 session, so those are done when the UI can be seen; backend/testable work proceeds

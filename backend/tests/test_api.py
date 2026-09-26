@@ -587,3 +587,23 @@ def test_session_stability_api():
         r = c.get(f"/api/sessions/{ss[0]['id']}/stability")
         assert r.status_code == 200
         assert set(r.json()) >= {"session_id", "live", "stability", "compare"}
+
+
+def test_status_carries_pit_guard_and_push_register_kind():
+    if not HAVE_WEB:
+        print("    (skipped: fastapi/httpx not installed)")
+        return
+    from heatermeterd.api import create_app
+    import tempfile
+
+    svc = HeaterMeterService(SimLink(setpoint=225.0, interval=0.05, seed=1), Store(":memory:"))
+    svc.push_config_path = os.path.join(tempfile.mkdtemp(), "push.json")
+    app = create_app(svc)
+    with TestClient(app) as c:
+        d = c.get("/api/status").json()
+        assert set(d["pit_guard"]) >= {"low", "fire_dying", "overtemp", "armed"}
+        r = c.post("/api/push/register", json={"token": "abc", "kind": "liveactivity"})
+        assert r.status_code == 200
+        assert svc._push_cfg["tokens"][0]["kind"] == "liveactivity"
+        la = c.get("/api/live-activity")
+        assert la.status_code == 200 and "pit" in la.json()

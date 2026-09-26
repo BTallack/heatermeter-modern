@@ -21,6 +21,7 @@
   let spDirty = $state(false);
   let health = $state({});   // channel -> 'disconnected' | 'fault' | 'ok'
   let fuelInfo = $state({}); // blower-effort fuel assessment from the daemon
+  let pitGuard = $state({}); // {low, fire_dying, overtemp, armed} from Pit Guard
   let guided = $state(null); // active guided cook (null when none)
   let servePlan = $state(null); // serve-time plan ("dinner at 6"), null when off
 
@@ -84,6 +85,7 @@
     if (d.state.pid && d.state.pid.units) unit = d.state.pid.units;
     if (d.state.probe_health) health = d.state.probe_health;
     if (d.state.fuel) fuelInfo = d.state.fuel;
+    if (d.state.pit_guard) pitGuard = d.state.pit_guard;
     guided = d.state.guided ?? guided;
     if ('serve_plan' in d.state) servePlan = d.state.serve_plan;
     modeLabel = status.pid_mode_label || '';
@@ -284,6 +286,13 @@
           <span class="text-red-500 font-semibold">Add fuel</span>
         {:else if fuelInfo.depleting && fuelInfo.est_secs_to_max}
           <span class="text-amber-500">Fuel {fuelHours(fuelInfo.est_secs_to_max)}</span>
+        {/if}
+        {#if pitGuard.fire_dying}
+          <span class="text-red-500 font-semibold">Fire dying</span>
+        {:else if pitGuard.low}
+          <span class="text-amber-500 font-semibold">Pit running low</span>
+        {:else if pitGuard.overtemp}
+          <span class="text-red-500 font-semibold">Running hot</span>
         {/if}
       </div>
       {#if servePlan?.enabled}

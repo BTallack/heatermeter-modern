@@ -259,6 +259,14 @@
     } catch (e) { alert('Could not repeat the cook'); }
   }
   function fmtHrs(s) { return s ? (s / 3600).toFixed(1) + 'h' : '--'; }
+  // "· learned 2 pulled + 1 ribs cook shapes": the predictor's cut-aware prior
+  // has been tuned by that many finished cooks on this cooker.
+  function learnedShapes(m) {
+    const parts = Object.entries(m || {}).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`);
+    if (!parts.length) return '';
+    const total = parts.reduce((s, p) => s + Number(p.split(' ')[0]), 0);
+    return ` · learned ${parts.join(' + ')} cook shape${total === 1 ? '' : 's'}`;
+  }
 
   // -- guided cooks -----------------------------------------------------------
   let guidedCat = $state([]);
@@ -647,7 +655,7 @@
       {/if}
     </div>
     {#if cookStats && cookStats.cooks > 1}
-      <p class="text-xs opacity-50 mb-2">{cookStats.cooks} cooks logged · average {fmtHrs(cookStats.avg_duration_secs)}{cookStats.stalls_seen ? ` · your stalls average ${fmtHrs(cookStats.avg_stall_secs)}` : ''}{cookStats.longest_secs ? ` · longest ${fmtHrs(cookStats.longest_secs)}` : ''}</p>
+      <p class="text-xs opacity-50 mb-2">{cookStats.cooks} cooks logged · average {fmtHrs(cookStats.avg_duration_secs)}{cookStats.stalls_seen ? ` · your stalls average ${fmtHrs(cookStats.avg_stall_secs)}` : ''}{cookStats.longest_secs ? ` · longest ${fmtHrs(cookStats.longest_secs)}` : ''}{learnedShapes(cookStats.learned_shapes)}</p>
     {/if}
     {#if !sessions.length}
       <div class="text-sm opacity-50">No saved cooks yet. Your first cook starts logging automatically when the pit comes up to temp.</div>

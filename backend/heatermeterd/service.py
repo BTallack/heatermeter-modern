@@ -20,7 +20,8 @@ import time
 from typing import Callable, Optional
 
 from . import (apns, auth, cookdone, firmware, fuel, guided, hostupdate,
-               lidrecovery, pitguard, powerup, probewatch, protocol, serveplan, stability)
+               lidrecovery, pitguard, powerup, probewatch, protocol, serveplan,
+               stability, cookprior)
 from .cookdone import CookDoneDetector
 from .fuel import FuelMonitor
 from .guided import GuidedRun
@@ -127,6 +128,12 @@ class HeaterMeterService:
         self.profiles_path: Optional[str] = None
         # Latest cached predictions per channel (fed by _check_eta_push).
         self.last_predictions: dict = {}
+        # Cut-aware prior (cookprior.py): where each food probe started this
+        # cook, and the user's learned cook shapes (cookprior.json).
+        self._food_start: dict = {}          # channel -> (ts, temp)
+        self.cookprior_path: Optional[str] = None
+        self._cookprior_curves: dict = {}
+        self._last_la_push: float = 0.0      # Live Activity push throttle
         self._pred_logged: dict = {}   # channel -> ts of last timeline forecast
         # Which named preset is configured on each probe (the board only reports
         # type+coeffs, not the preset name), so the UI can show the actual probe.
@@ -221,6 +228,7 @@ class HeaterMeterService:
         self._lidrecovery.set_config(self._load_lidrecovery_file())
         self._pitguard.set_config(self._load_pitguard_file())
         self._serveplan_cfg = self._load_serveplan_file()
+        self._cookprior_curves = self._load_cookprior()
         self._push_cfg = self._load_push_file()
         # Power-up policy: remember when the board was last heard from (and
         # whether a cook was running) so the first status can decide whether
@@ -465,10 +473,12 @@ class HeaterMeterService:
             "token_count": len(cfg.get("tokens") or []),
         }
 
-    def register_push_token(self, token: str, platform: str = "ios") -> dict:
-        """An app instance registers (or refreshes) its APNs device token."""
+    def register_push_token(self, token: str, platform: str = "ios",
+                            kind: str = "alert") -> dict:
+        """An app instance registers (or refreshes) an APNs token: a device
+        token (*kind* alert) or a Live Activity push token (liveactivity)."""
         reg = apns.PushRegistry(self._push_cfg.get("tokens"))
-        if not reg.register(token, platform, now=self.time_fn()):
+        if not reg.register(token, platform, now=self.time_fn(), kind=kind):
             return {"ok": False, "error": "empty token"}
         self._push_cfg["tokens"] = reg.to_list()
         self._save_push_file()
@@ -509,7 +519,8 @@ class HeaterMeterService:
         """Broadcast an alert to every registered device token off the event
         loop. Prunes tokens APNs reports as 410 Unregistered. Best-effort."""
         sender = self._apns_sender()
-        tokens = list(self._push_cfg.get("tokens") or [])
+        tokens = [t for t in (self._push_cfg.get("tokens") or [])
+                  if t.get("kind", "alert") == "alert"]
         if sender is None or not tokens or self.loop is None:
             return
         payload = apns.alert_payload(title, message, priority=priority)
@@ -528,6 +539,151 @@ class HeaterMeterService:
             self.loop.run_in_executor(None, _do)
         except Exception:
             pass
+
+    LIVE_ACTIVITY_INTERVAL = 60.0
+
+    def _pitguard_alert_text(self) -> Optional[str]:
+        g = self._pitguard.status()
+        if g.get("fire_dying"):
+            return "Fire dying - fan maxed"
+        if g.get("low"):
+            return "Pit running low"
+        if g.get("overtemp"):
+            return "Pit running hot"
+        for ch in ("food1", "food2"):
+            p = self.last_predictions.get(ch) or {}
+            if p.get("model") == "plateau" and p.get("plateau_temp") is not None:
+                return f"Levelling off ~{round(p['plateau_temp'])}°"
+        return None
+
+    def live_activity_state(self) -> dict:
+        """The content state a Live Activity shows (also what the app renders
+        locally from the WebSocket while it is in the foreground)."""
+        pdone = {ch: p.get("done_at") for ch, p in self.last_predictions.items()
+                 if p.get("done_at")}
+        return apns.liveactivity_content_state(
+            self.state.status.to_dict(), pdone, alert=self._pitguard_alert_text(),
+            probe_names=self.state.probe_names or None)
+
+    def _push_live_activity(self, ts: float, event: str = "update",
+                            force: bool = False) -> None:
+        """Update every registered Live Activity (lock screen / Dynamic Island)
+        with the live cook state, at most once a minute; ``event="end"`` closes
+        them when the cook finishes. Off the loop, best-effort."""
+        if not force and (ts - self._last_la_push) < self.LIVE_ACTIVITY_INTERVAL:
+            return
+        sender = self._apns_sender()
+        tokens = [t["token"] for t in (self._push_cfg.get("tokens") or [])
+                  if t.get("kind") == "liveactivity"]
+        if sender is None or not tokens or self.loop is None:
+            return
+        self._last_la_push = ts
+        state = self.live_activity_state()
+        payload = apns.liveactivity_payload(
+            state, event=event, now=ts,
+            stale_secs=self.LIVE_ACTIVITY_INTERVAL * 3,
+            dismiss_ts=(ts + 1800) if event == "end" else None)
+        priority = "high" if (event == "end" or state.get("alert")) else "default"
+
+        def _do():
+            dead = []
+            for tok in tokens:
+                res = sender.send(tok, payload, push_type="liveactivity",
+                                  priority=priority, live_activity=True)
+                if res.get("unregistered"):
+                    dead.append(tok)
+            for tok in dead:
+                self.loop.call_soon_threadsafe(self.remove_push_token, tok)
+
+        try:
+            self.loop.run_in_executor(None, _do)
+        except Exception:
+            pass
+
+    # -- cut-aware prior: per-cook anchors + learned shapes ------------------
+
+    def _load_cookprior(self) -> dict:
+        d = self._load_json_file(self.cookprior_path) if self.cookprior_path else None
+        return d if isinstance(d, dict) else {}
+
+    def _save_cookprior(self) -> None:
+        if not self.cookprior_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.cookprior_path) or ".", exist_ok=True)
+            with open(self.cookprior_path, "w") as f:
+                json.dump(self._cookprior_curves, f, indent=1)
+        except Exception:
+            pass
+
+    def _food_target(self, probe: int) -> Optional[float]:
+        """The high alarm (= cook target) for a food probe index, or None."""
+        al = self.state.alarms or []
+        idx = probe * 2 + 1
+        raw = al[idx] if idx < len(al) else None
+        try:
+            t = float(str(raw).rstrip("LH"))
+        except (TypeError, ValueError):
+            return None
+        return t if t > 0 else None
+
+    def _prior_for(self, channel: str, target, ts: float) -> Optional[dict]:
+        """The cut-aware prior for a food channel: anchors the probe's start
+        temperature for this cook on first sight (re-anchoring if the reading
+        drops well below it - a probe moved to a fresh piece), then scales the
+        cut's curve by the progress so far. None until there is enough."""
+        probe = {"food1": 1, "food2": 2, "ambient": 3}.get(channel)
+        if probe is None or target is None:
+            return None
+        cur = self._probe_temp(probe)
+        if not isinstance(cur, (int, float)):
+            return None
+        start = self._food_start.get(channel)
+        if start is None:
+            # Anchor where the probe started this cook, not when the target was
+            # set (a target added two hours in must not look like a fresh start).
+            first = None
+            if self.session_id is not None:
+                try:
+                    first = self.store.first_probe_sample(self.session_id, channel)
+                except Exception:
+                    first = None
+            if first and isinstance(first[1], (int, float)) and first[1] < float(target) - cookprior.FINISH_MARGIN:
+                start = (float(first[0]), float(first[1]))
+            else:
+                if cur >= float(target) - cookprior.FINISH_MARGIN:
+                    return None         # inserted already done: nothing to learn from
+                start = (ts, float(cur))
+            self._food_start[channel] = start
+        elif cur < start[1] - 5.0:
+            self._food_start[channel] = (ts, float(cur))   # moved to a fresh, cold piece
+            return None
+        names = self.state.probe_names or []
+        name = names[probe] if probe < len(names) else None
+        profile = cookprior.profile_for(target, name)
+        curve = cookprior.curve_from_store(self._cookprior_curves, profile)
+        return cookprior.estimate(ts - start[0], start[1], cur, target, profile, curve)
+
+    def learn_cook_curve(self, channel: str, probe: int, target) -> Optional[dict]:
+        """A food probe just reached its target: fold this cook's temperature
+        trace into the user's learned shape for that cut (cookprior.json).
+        Returns the updated profile entry or None if the trace was unusable."""
+        if self.session_id is None or target is None:
+            return None
+        try:
+            cols = self.store.history_columns(None, 4000, self.session_id)
+        except Exception:
+            return None
+        curve = cookprior.learn_curve(cols.get("t") or [], cols.get(channel) or [], target)
+        if not curve:
+            return None
+        names = self.state.probe_names or []
+        name = names[probe] if probe < len(names) else None
+        profile = cookprior.profile_for(target, name)
+        self._cookprior_curves[profile] = cookprior.merge_curve(
+            self._cookprior_curves.get(profile), curve)
+        self._save_cookprior()
+        return {profile: self._cookprior_curves[profile]}
 
     # -- UI prefs (browser-agnostic, server-persisted) --------------------
 
@@ -1417,6 +1573,9 @@ class HeaterMeterService:
             "longest_secs": max(durations) if durations else None,
             "stalls_seen": len(stalls),
             "avg_stall_secs": _avg(stalls),
+            "learned_shapes": {k: int(v.get("n") or 0)
+                               for k, v in self._cookprior_curves.items()
+                               if isinstance(v, dict)},
         }
 
     # -- cooker profiles -----------------------------------------------------
@@ -1637,6 +1796,10 @@ class HeaterMeterService:
         self._session_completed = True
         self._emit({"type": "cook_complete", "session_id": session_id,
                     "ts": done_at, "reason": reason})
+        try:
+            self._push_live_activity(done_at, event="end", force=True)
+        except Exception:
+            pass
         self._record_event(done_at, "cook_complete",
                            label="Cook complete"
                                  + (" (manual)" if reason == "manual" else ""))
@@ -2835,6 +2998,7 @@ class HeaterMeterService:
             self._probewatch.reset()  # fresh probe-health tracking per cook
             self.probe_health = {}
             self._pred_logged = {}   # fresh forecast logging per cook
+            self._food_start = {}    # the prior re-anchors on the new cook
             self._session_completed = False
             if self._serveplan_cfg.get("enabled"):
                 self.clear_serveplan()   # a serve time belongs to one cook
@@ -2919,6 +3083,7 @@ class HeaterMeterService:
             state_d["fuel"] = self._fuel.status()
             state_d["guided"] = self.guided_status()
             state_d["serve_plan"] = self.serveplan_status()
+            state_d["pit_guard"] = self._pitguard.status()
             self._broadcast({"ts": ts, "session_id": sid, "state": state_d})
             if self.mqtt is not None:
                 try:
@@ -2963,6 +3128,13 @@ class HeaterMeterService:
                     if half == "high":
                         self._record_event(ts, "target", channel=ch,
                                            label=f"{nm} reached target", value=temp)
+                        if probe in (1, 2, 3):
+                            tgt = self._food_target(probe)
+                            fn = lambda c=ch, pr=probe, tg=tgt: self.learn_cook_curve(c, pr, tg)
+                            if self.loop is not None:
+                                self.loop.run_in_executor(None, fn)
+                            else:
+                                fn()
                     else:
                         self._record_event(ts, "alarm_low", channel=ch,
                                            label=f"{nm} below low alarm", value=temp)
@@ -3051,7 +3223,8 @@ class HeaterMeterService:
                 continue
             p = predict.predict(tss, vals, target, env_temp=env,
                                 window_seconds=window,
-                                stalled=(channel in stalled_chs))
+                                stalled=(channel in stalled_chs),
+                                prior=self._prior_for(channel, target, ts))
             eta = p.eta_seconds
             done_at = (ts + eta) if eta is not None else None
             hi = p.eta_high
@@ -3060,7 +3233,7 @@ class HeaterMeterService:
                 "target": target, "done_at": done_at,
                 "done_at_high": (ts + hi) if hi is not None else None,
                 "stalled": bool(p.stalled), "model": p.model,
-                "plateau_temp": p.plateau_temp,
+                "plateau_temp": p.plateau_temp, "prior_eta": p.prior_eta,
             }
             # Log the forecast to the timeline every ~10 min so the cook report
             # can show prediction-vs-actual afterwards. These events are data,
@@ -3076,6 +3249,11 @@ class HeaterMeterService:
             self._drive_serveplan(ts)
         except Exception:
             pass
+        if self.session_id is not None:
+            try:
+                self._push_live_activity(ts)
+            except Exception:
+                pass
 
     def _check_eta_push(self, ts: float) -> None:
         """Push a one-time 'almost done' heads-up when a probe's cached ETA drops

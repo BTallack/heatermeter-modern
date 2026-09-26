@@ -190,3 +190,22 @@ def test_push_noop_when_disabled():
         await svc.stop()
 
     asyncio.run(scenario())
+
+
+def test_registry_kinds_and_content_state_extras():
+    reg = apns.PushRegistry()
+    reg.register("dev1", "ios", now=1.0)
+    reg.register("act1", "ios", now=2.0, kind="liveactivity")
+    reg.register("odd", "ios", now=3.0, kind="bogus")
+    assert reg.all_tokens() == ["dev1", "act1", "odd"]
+    assert reg.all_tokens("alert") == ["dev1", "odd"]
+    assert reg.all_tokens("liveactivity") == ["act1"]
+    # kind survives a round trip through to_list.
+    again = apns.PushRegistry(reg.to_list())
+    assert again.all_tokens("liveactivity") == ["act1"]
+    cs = apns.liveactivity_content_state(
+        {"pit": 250.2, "set_point": 250, "food1": 160.1, "lid_countdown": 0},
+        {"food1": 1_700_000_000.0}, alert="Pit running low",
+        probe_names=["Pit", "Brisket", "Food 2", "Ambient"])
+    assert cs["alert"] == "Pit running low" and cs["food1Name"] == "Brisket"
+    assert cs["predictedDoneFood1"] == 1_700_000_000.0 and cs["lidOpen"] is False

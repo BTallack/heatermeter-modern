@@ -119,6 +119,13 @@ final class HeaterMeterClient {
     func setUnits(_ unit: String) async throws { try await post("units", ["unit": unit]) }
 
     func pushStatus() async throws -> PushStatus { try await get("push") }
+    func registerLiveActivityToken(_ hex: String) async throws {
+        _ = try await post("push/register", ["token": hex, "platform": "ios", "kind": "liveactivity"])
+    }
+    /// The Live Activity content state (same shape the daemon pushes).
+    func liveActivityState() async throws -> CookActivityAttributes.ContentState {
+        try await get("live-activity")
+    }
     func registerPush(deviceToken: Data) async throws {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
         try await post("push/register", ["token": hex, "platform": "ios"])

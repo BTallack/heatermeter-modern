@@ -222,6 +222,17 @@ class Store:
                 out[c].append(r[c])
         return out
 
+    def first_probe_sample(self, session_id: int, column: str):
+        """(ts, value) of the first sample in a session where *column* read a
+        number - where a food probe started its cook - or None."""
+        if column not in COLS:
+            raise ValueError(f"unknown column {column!r}")
+        with self.lock:
+            row = self.conn.execute(
+                f"SELECT ts,{column} FROM samples WHERE session_id=? AND {column} IS NOT NULL "
+                "ORDER BY ts LIMIT 1", (session_id,)).fetchone()
+        return (row["ts"], row[column]) if row else None
+
     def recent_series(self, column: str, seconds: float, now: float):
         """Return (timestamps, values) for one column over the trailing window.
         Used by the predictor. *column* must be in COLS."""

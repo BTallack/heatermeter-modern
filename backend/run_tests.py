@@ -60,6 +60,7 @@ TEST_MODULES = [
     "test_serveplan",
     "test_powerup",
     "test_stability",
+    "test_cookprior",
     "test_probewatch",
     "test_guided",
     "test_fuel",

@@ -3,6 +3,7 @@
 //  temperature unit, integration status, and connection.
 
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     @Environment(HeaterMeterClient.self) private var client
@@ -228,20 +229,53 @@ private struct UnitsSection: View {
 
 private struct IntegrationsSection: View {
     let client: HeaterMeterClient
+    @Environment(LiveActivityManager.self) private var live
     @State private var push: PushStatus?
+    @State private var pushAuth = "…"
 
     var body: some View {
+        @Bindable var live = live
         Section {
-            if let push {
-                LabeledContent("Push (APNs)", value: push.enabled ? "On" : "Off")
-                if push.enabled {
-                    LabeledContent("Devices", value: "\(push.tokenCount)")
+            LabeledContent("Notifications on this phone", value: pushAuth)
+            if pushAuth != "Enabled" {
+                Button("Enable push notifications") {
+                    Task {
+                        let ok = await PushManager.enable(client: client)
+                        pushAuth = ok ? "Enabled" : "Denied"
+                    }
                 }
             }
-            Text("MQTT / Home Assistant and notifications are configured from the web interface.")
+            if let err = AppDelegate.lastError {
+                Text(err).font(.caption).foregroundStyle(.secondary)
+            }
+            Toggle("Live Activity on the Lock Screen", isOn: $live.enabled)
+            if !live.available {
+                Text("Live Activities are turned off for this app in iOS Settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if live.isRunning {
+                Text("Showing the current cook.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let push {
+                LabeledContent("Daemon push (APNs)", value: push.enabled ? "On" : "Off")
+                if push.enabled {
+                    LabeledContent("Registered tokens", value: "\(push.tokenCount)")
+                }
+            }
+            Text("MQTT / Home Assistant and the daemon's APNs credentials are configured from the web interface.")
                 .font(.caption).foregroundStyle(.secondary)
-        } header: { Text("Integrations") }
-        .task { push = try? await client.pushStatus() }
+        } header: { Text("Notifications & integrations") }
+        .task {
+            push = try? await client.pushStatus()
+            pushAuth = Self.label(await PushManager.authorizationStatus())
+        }
+    }
+
+    private static func label(_ s: UNAuthorizationStatus) -> String {
+        switch s {
+        case .authorized, .provisional, .ephemeral: return "Enabled"
+        case .denied: return "Denied"
+        default: return "Not asked"
+        }
     }
 }
 

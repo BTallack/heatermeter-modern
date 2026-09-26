@@ -37,6 +37,7 @@ class Prediction:
     eta_high: Optional[float] = None  # pessimistic bound (seconds)
     stalled: bool = False          # probe is in a detected evaporative stall
     plateau_temp: Optional[float] = None  # model="plateau": where the probe is levelling off
+    prior_eta: Optional[float] = None     # the cut-aware prior's own estimate, when one was blended
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -295,8 +296,58 @@ def predict_scurve(timestamps, values, target, env_temp,
                       eta_low=eta * 0.85, eta_high=eta * 1.25)
 
 
+# Blending the cut-aware prior (cookprior.py) with the physics estimate: far
+# from the target the prior dominates (it knows the stall is coming), close to
+# it the physics does (it sees the actual approach).
+PRIOR_FULL_GAP = 40.0      # deg to go at/above which the prior carries most weight
+PRIOR_ZERO_GAP = 8.0       # deg to go at/below which the prior is ignored
+PRIOR_MAX_WEIGHT = 0.85
+
+
+def _blend_prior(p, prior, target, values):
+    """Fold a ``cookprior.estimate`` result into *p* by remaining gap."""
+    if not prior or prior.get("eta") is None or target is None:
+        return p
+    if p.model == "plateau" or (p.eta_seconds is not None and p.eta_seconds <= 0):
+        return p
+    v_last = next((v for v in reversed(values) if isinstance(v, (int, float))), None)
+    if v_last is None:
+        return p
+    gap = target - v_last
+    w = (gap - PRIOR_ZERO_GAP) / (PRIOR_FULL_GAP - PRIOR_ZERO_GAP)
+    w = max(0.0, min(PRIOR_MAX_WEIGHT, w))
+    pe = float(prior["eta"])
+    plo = float(prior.get("eta_low") or pe)
+    phi = float(prior.get("eta_high") or pe)
+    if w <= 0.0:
+        p.prior_eta = pe
+        return p
+    if p.eta_seconds is None:
+        # The physics has nothing (flat, stalled, too early): the prior alone,
+        # honestly labelled.
+        return Prediction(pe, p.slope_per_min, "low", target, model="prior",
+                          eta_low=plo, eta_high=phi, stalled=p.stalled,
+                          prior_eta=pe)
+    import math
+    # Geometric blend: the two can differ by an order of magnitude, and a
+    # linear mix would let a small prior weight swing a short estimate wildly.
+    eta = math.exp(w * math.log(max(pe, 1.0)) + (1.0 - w) * math.log(max(p.eta_seconds, 1.0)))
+    lo = min(p.eta_low or p.eta_seconds, plo)
+    hi = max(p.eta_high or p.eta_seconds, phi)
+    agree = abs(pe - p.eta_seconds) <= 0.35 * max(pe, p.eta_seconds)
+    conf = p.confidence
+    if not agree and w >= 0.2:
+        conf = "low"
+    elif w >= 0.5 and conf == "high":
+        conf = "medium"
+    return Prediction(eta, p.slope_per_min, conf, target, model=p.model,
+                      eta_low=lo, eta_high=hi, stalled=p.stalled,
+                      plateau_temp=p.plateau_temp, prior_eta=pe)
+
+
 def predict(timestamps, values, target, env_temp=None,
-            window_seconds: float = 900.0, stalled: bool = False):
+            window_seconds: float = 900.0, stalled: bool = False,
+            prior: Optional[dict] = None):
     """Best-available prediction: prefer the stall-aware S-curve when an
     environment (cooker) temperature is known and the model fits, else fall back
     to the robust linear estimate.
@@ -311,7 +362,11 @@ def predict(timestamps, values, target, env_temp=None,
 
     Independently of the watcher, a collapsing rate of rise near the target
     turns the estimate into ``model="plateau"`` (no ETA; ``plateau_temp`` says
-    where the probe is levelling off) - see :func:`_apply_rate_decay`."""
+    where the probe is levelling off) - see :func:`_apply_rate_decay`.
+
+    *prior* is an optional ``cookprior.estimate`` result (the cut-aware shape
+    prior); it is blended in by remaining gap - see :func:`_blend_prior` - so
+    early in a long cook the estimate knows a stall is coming."""
     p = None
     if env_temp is not None:
         sc = predict_scurve(timestamps, values, target, env_temp,
@@ -325,6 +380,7 @@ def predict(timestamps, values, target, env_temp=None,
     if p.model == "plateau":
         p.stalled = bool(stalled)
         return p
+    p = _blend_prior(p, prior, target, values)
     if stalled and (p.eta_seconds or 0) > 0:
         p = Prediction(p.eta_seconds, p.slope_per_min, "low", p.target,
                        model="stall", eta_low=p.eta_seconds,

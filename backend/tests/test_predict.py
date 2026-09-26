@@ -205,3 +205,47 @@ def test_steady_rise_untouched_by_decay_pass():
     p = predict.predict(ts, vals, 160.0, env_temp=None)
     assert p.model == "linear" and p.confidence == "high"
     assert p.eta_high <= p.eta_seconds * 1.25
+
+
+# -- cut-aware prior blend -----------------------------------------------------
+
+def test_prior_dominates_far_from_target():
+    # Steady 0.5 deg/min climb at 130 toward 203: the physics says ~2.4 h, the
+    # prior (stall ahead) says 7 h. 73 deg to go -> the prior carries most of it.
+    ts = [i * 60 for i in range(70)]
+    vals = [95 + i * 0.5 for i in range(70)]
+    prior = {"eta": 7 * 3600, "eta_low": 5 * 3600, "eta_high": 10 * 3600, "profile": "pulled"}
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0, prior=prior)
+    assert p.prior_eta == 7 * 3600
+    assert 5 * 3600 < p.eta_seconds < 7 * 3600
+    assert p.eta_high >= 10 * 3600 and p.eta_low <= 5 * 3600
+    assert p.confidence == "low"           # the two disagree by far more than 35%
+
+
+def test_prior_ignored_close_to_target():
+    ts = [i * 60 for i in range(70)]
+    vals = [160 + i * 0.5 for i in range(70)]     # last value 194.5, 8.5 deg to go
+    prior = {"eta": 3 * 3600, "eta_low": 2 * 3600, "eta_high": 4 * 3600}
+    p0 = predict.predict(ts, vals, 203.0, env_temp=265.0)
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0, prior=prior)
+    assert abs(p.eta_seconds - p0.eta_seconds) < 0.05 * p0.eta_seconds
+    assert p.prior_eta == 3 * 3600
+
+
+def test_prior_alone_when_physics_has_nothing():
+    ts = [i * 60 for i in range(70)]
+    vals = [160.0] * 70                            # dead flat in the stall
+    prior = {"eta": 4 * 3600, "eta_low": 3 * 3600, "eta_high": 6 * 3600}
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0, prior=prior)
+    assert p.model == "prior" and p.confidence == "low"
+    assert p.eta_seconds == 4 * 3600 and p.eta_high == 6 * 3600
+    # ...and the stall flag still widens/labels it.
+    p2 = predict.predict(ts, vals, 203.0, env_temp=265.0, prior=prior, stalled=True)
+    assert p2.stalled and p2.model == "stall" and p2.eta_seconds == 4 * 3600
+
+
+def test_plateau_beats_prior():
+    ts, vals = _approach(202.5, 193.0, 1.2, 70)
+    p = predict.predict(ts, vals, 203.0, env_temp=265.0,
+                        prior={"eta": 3600, "eta_low": 1800, "eta_high": 7200})
+    assert p.model == "plateau" and p.prior_eta is None

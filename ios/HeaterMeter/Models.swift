@@ -24,6 +24,8 @@ struct DeviceState: Decodable, Sendable {
     var probeOffsets: [String]   // per-probe calibration offsets, as the board reports them
     var pid: PIDValues?
     var alarms: [String]   // flat [low0,high0,low1,high1,...]
+    var servePlan: ServePlan?
+    var pitGuard: PitGuardState?
 
     enum CodingKeys: String, CodingKey {
         case deviceName = "device_name"
@@ -34,6 +36,8 @@ struct DeviceState: Decodable, Sendable {
         case probeNames = "probe_names"
         case probeOffsets = "probe_offsets"
         case pid
+        case servePlan = "serve_plan"
+        case pitGuard = "pit_guard"
         case alarms
     }
 
@@ -48,6 +52,8 @@ struct DeviceState: Decodable, Sendable {
         probeOffsets = (try? c.decode([String].self, forKey: .probeOffsets))
             ?? ((try? c.decode([Double].self, forKey: .probeOffsets)) ?? []).map { String($0) }
         pid = try? c.decode(PIDValues.self, forKey: .pid)
+        servePlan = (try? c.decodeIfPresent(ServePlan.self, forKey: .servePlan)) ?? nil
+        pitGuard = (try? c.decodeIfPresent(PitGuardState.self, forKey: .pitGuard)) ?? nil
         // alarms may arrive as strings ("203H"/"-40") or numbers; coerce to strings.
         if let s = try? c.decode([String].self, forKey: .alarms) {
             alarms = s
@@ -381,5 +387,46 @@ enum JSONValue: Codable, Sendable {
         case .array(let a): return a.map(\.anyValue)
         case .object(let o): return o.mapValues(\.anyValue)
         }
+    }
+}
+
+// MARK: - Serve plan + Pit Guard (service-level live fields in /api/status + WS)
+
+struct ServePlanAssessment: Codable, Sendable {
+    var status: String?
+    var readyAt: Double?
+    var readyAtHigh: Double?
+    var plateauTemp: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case readyAt = "ready_at"
+        case readyAtHigh = "ready_at_high"
+        case plateauTemp = "plateau_temp"
+    }
+}
+
+struct ServePlan: Codable, Sendable {
+    var enabled: Bool?
+    var serveTs: Double?
+    var restSecs: Double?
+    var assessment: ServePlanAssessment?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, assessment
+        case serveTs = "serve_ts"
+        case restSecs = "rest_secs"
+    }
+}
+
+struct PitGuardState: Codable, Sendable {
+    var low: Bool
+    var fireDying: Bool
+    var overtemp: Bool
+    var armed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case low, overtemp, armed
+        case fireDying = "fire_dying"
     }
 }

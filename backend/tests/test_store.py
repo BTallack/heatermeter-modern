@@ -69,3 +69,16 @@ def test_store_prune_downsample_and_stats():
     assert st.downsample_before(1000.0, keep_every=10) == 45
     assert st.db_stats()["samples"] == 5
     st.vacuum()
+
+
+def test_first_probe_sample():
+    from heatermeterd.protocol import Status
+    s = Store(":memory:")
+    sid = s.start_session(1000.0)
+    s.insert(Status(set_point=225, pit=100, food1=None), 1000.0, session_id=sid)
+    s.insert(Status(set_point=225, pit=120, food1=44.5), 1060.0, session_id=sid)
+    s.insert(Status(set_point=225, pit=140, food1=50.0), 1120.0, session_id=sid)
+    assert s.first_probe_sample(sid, "food1") == (1060.0, 44.5)
+    assert s.first_probe_sample(sid, "food2") is None
+    assert s.first_probe_sample(999, "food1") is None
+

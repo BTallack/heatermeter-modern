@@ -5,6 +5,8 @@
 #   open HeaterMeter.xcodeproj     # set your signing Team, then Run
 #
 # The .xcodeproj is generated (not committed) so it never drifts from this file.
+# Two targets: the app, and a widget extension hosting the cook Live Activity
+# (Lock Screen + Dynamic Island). `Shared/` is compiled into both.
 name: HeaterMeter
 options:
   bundleIdPrefix: dev.tallack
@@ -13,7 +15,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "0.5.0"
+    MARKETING_VERSION: "0.6.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
 targets:
@@ -22,11 +24,21 @@ targets:
     platform: iOS
     sources:
       - path: HeaterMeter
+      - path: Shared
+    dependencies:
+      - target: HeaterMeterWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tallack.heatermeter
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
         GENERATE_INFOPLIST_FILE: NO
+    # Push needs the entitlement (and a signing Team) on a device; the simulator
+    # builds without it and falls back to local-only Live Activity updates.
+    entitlements:
+      path: HeaterMeter/HeaterMeter.entitlements
+      properties:
+        aps-environment: development
     info:
       path: HeaterMeter/Info.plist
       properties:
@@ -35,6 +47,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        UIBackgroundModes:
+          - remote-notification
         # The Pi serves plain HTTP on the LAN; allow local-network HTTP without
         # disabling ATS globally. (For a Tailscale/hostname or remote setup, use
         # HTTPS or add a per-domain ATS exception instead.)
@@ -44,3 +60,20 @@ targets:
         NSLocalNetworkUsageDescription: "Find your HeaterMeter on the local network."
         NSBonjourServices:
           - _http._tcp
+  HeaterMeterWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HeaterMeterWidgets
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tallack.heatermeter.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+    info:
+      path: HeaterMeterWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: HeaterMeter
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
