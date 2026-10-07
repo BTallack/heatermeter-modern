@@ -68,8 +68,15 @@ html.dark {
   --hm-resume: #6b9080;
 }
 
-/* Native controls take the action colour instead of the browser's blue. */
+/* Browser-drawn details take the palette instead of the browser's blue. */
 input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--hm-action); }
+input, textarea { caret-color: var(--hm-action); }
+::selection { background: rgb(208 60 0 / 0.3); }
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--hm-action);
+  outline-offset: 2px;
+}
+html { scrollbar-color: rgb(128 128 128 / 0.45) transparent; }
 
 /* Ember-orange accent (matches the pit color). Overrides Konsta's primary so
    the navbar/tabbar/buttons pick it up. Must come after the konsta import. */
@@ -110,6 +117,7 @@ h1, h2, h3, summary { font-family: var(--font-display); }
 /* Native modal dialogs (Dialog.svelte): the <dialog> is only a positioning
    shell; the card inside carries the surface. */
 dialog.hm-dialog {
+  margin: auto; /* the CSS reset zeroes the margin native dialogs centre with */
   padding: 0; border: 0; background: transparent; color: inherit;
   width: min(24rem, calc(100% - 2rem)); max-width: none; overflow: visible;
 }

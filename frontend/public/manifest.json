@@ -1,0 +1,10 @@
+{
+  "name": "HeaterMeter",
+  "short_name": "HeaterMeter",
+  "description": "Your BBQ controller: the pit, the food, and when it will be done.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0e11",
+  "theme_color": "#0b0e11"
+}

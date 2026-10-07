@@ -136,10 +136,14 @@
     return { hooks: { draw: (u) => {
       if (!events.length) return;
       const ctx = u.ctx, { left, top, width, height } = u.bbox;
+      const pr = uPlot.pxRatio || 1;   // the plot is drawn in device pixels
       ctx.save();
-      ctx.font = '10px "Work Sans Variable", system-ui, sans-serif';
+      ctx.font = `${Math.round(11 * pr)}px "Work Sans Variable", system-ui, sans-serif`;
       ctx.textAlign = 'center';
-      for (const ev of events) {
+      // Captions never overlap or run off the plot: a caption that would land on
+      // the previous one is skipped (its dot and line still show).
+      let lastRight = -Infinity;
+      for (const ev of [...events].sort((a, b) => a.ts - b.ts)) {
         if (ev.kind === 'prediction') continue;   // forecast data, not a marker
         const x = u.valToPos(ev.ts, 'x', true);
         if (x < left || x > left + width) continue;
@@ -148,12 +152,20 @@
         ctx.globalAlpha = 0.25; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke();
         ctx.setLineDash([]); ctx.globalAlpha = 0.9;
-        ctx.beginPath(); ctx.arc(x, top + height - 5, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, top + height - 5 * pr, 3 * pr, 0, Math.PI * 2); ctx.fill();
         const cap = ev.kind === 'setpoint' ? (ev.label || '').replace('Set ', '')
                   : ev.kind === 'stage' ? (ev.label || '').replace('Stage: ', '')
-                  : ev.kind === 'food_target' ? (ev.value != null ? Math.round(ev.value) + '°' : '🎯')
+                  : ev.kind === 'food_target' ? (ev.value != null ? Math.round(ev.value) + '°' : 'Target')
                   : EVENT_CAPTIONS[ev.kind];
-        if (cap) ctx.fillText(String(cap).slice(0, 12), x, top + height - 12);
+        if (cap) {
+          const text = String(cap).slice(0, 12);
+          const w = ctx.measureText(text).width;
+          const cx = Math.min(Math.max(x, left + w / 2 + 2 * pr), left + width - w / 2 - 2 * pr);
+          if (cx - w / 2 > lastRight + 4 * pr) {
+            ctx.fillText(text, cx, top + height - 12 * pr);
+            lastRight = cx + w / 2;
+          }
+        }
       }
       ctx.restore();
     } } };
@@ -165,7 +177,7 @@
       const ctx = u.ctx, { left, top, width, height } = u.bbox;
       ctx.save();
       ctx.strokeStyle = pal.lid; ctx.fillStyle = pal.lid;
-      ctx.lineWidth = 1; ctx.font = '11px "Work Sans Variable", system-ui, sans-serif';
+      ctx.lineWidth = 1; ctx.font = `${Math.round(11 * (uPlot.pxRatio || 1))}px "Work Sans Variable", system-ui, sans-serif`;
       for (const n of notes) {
         const x = u.valToPos(n.ts, 'x', true);
         if (x < left || x > left + width) continue;
@@ -193,6 +205,15 @@
     } };
   }
 
+  // One time format on the x axis ("3:15 PM"), or dates for multi-day ranges.
+  function timeTicks(u, splits) {
+    const span = (u.scales.x.max ?? 0) - (u.scales.x.min ?? 0);
+    if (span > 36 * 3600) return splits.map((ts) => new Date(ts * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+    return splits.map((ts) => fmtClock(ts));
+  }
+  // The left % axis only earns its space while Fan or Servo is shown.
+  const pctShown = (u) => u.series.some((s) => s.scale === '%' && s.show);
+
   function makeChart() {
     readPalette();
     chart = new uPlot({
@@ -207,7 +228,8 @@
       legend: { live: true },
       cursor: { drag: { x: true, y: false } },
       plugins: [targetLinesPlugin(), eventsPlugin(), notesPlugin(), latestLegendPlugin(),
-                { hooks: { setSeries: [(u) => saveVis(u)] } }],
+                // Re-measure the axes so the % axis appears/disappears with Fan/Servo.
+                { hooks: { setSeries: [(u) => { saveVis(u); u.redraw(false, true); }] } }],
       // x series: show time-only in the legend (no date) so the legend row
       // doesn't wrap to a second line at normal width.
       series: [{ value: (u, ts) => (ts == null ? '--' : fmtClock(ts)) }, ...SERIES.map((s) => ({
@@ -221,12 +243,13 @@
         value: (u, v) => (v == null ? '--' : v.toFixed(1) + (s.scale === '%' ? '%' : '°')),
       }))],
       axes: [
-        axis(),                                          // x (time, bottom)
+        axis({ values: timeTicks, space: 80 }),           // x (time, bottom)
         axis({ size: 48, side: 1 }),                     // temperature -> right
         // Percent -> left. Its grid would double up with the temp grid, so
         // drop it and let the temperature scale own the gridlines.
-        axis({ scale: '%', side: 3, size: 42, grid: { show: false },
-               values: (u, vs) => vs.map((v) => v + '%') }),
+        axis({ scale: '%', side: 3, grid: { show: false }, ticks: { show: false },
+               size: (u) => (pctShown(u) ? 42 : 0),
+               values: (u, vs) => vs.map((v) => (pctShown(u) ? v + '%' : '')) }),
       ],
     }, data, chartEl);
     updateVsLegend();

@@ -11,7 +11,7 @@ export function fmtDuration(seconds) {
 }
 
 export function fmtClock(ts) {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 // Downscale a chosen photo client-side (phone shots are huge) to a JPEG data URL.

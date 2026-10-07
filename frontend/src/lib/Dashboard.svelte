@@ -473,8 +473,8 @@
   const act = $derived.by(() => {
     if (stale || alertLine) return null;
     const lever = {
-      drop: (n) => ({ label: `Drop the pit ${n}°`, run: () => nudgePit(-n) }),
-      raise: (n) => ({ label: `Raise the pit ${n}°`, run: () => nudgePit(n) }),
+      drop: (n) => ({ label: `Drop pit ${n}°`, run: () => nudgePit(-n) }),
+      raise: (n) => ({ label: `Raise pit ${n}°`, run: () => nudgePit(n) }),
       warm: () => ({ label: 'Keep warm when done', run: keepWarm }),
       time: () => ({ label: 'Change the time', run: openServePlan }),
     };
@@ -537,6 +537,15 @@
       : health[f.ch] === 'fault' ? `${f.label} sensor fault.` : '')),
   ].filter(Boolean).join(' '));
 
+  // The browser tab carries the reading (and any alert), so the cook can be
+  // watched from another tab or window.
+  $effect(() => {
+    const pit = status.pit;
+    const lead = !stale && alertLine ? alertLine.title.replace(/\.$/, '') + ' · ' : '';
+    document.title = typeof pit === 'number' && !stale ? `${lead}${Math.round(pit)}° pit · HeaterMeter` : 'HeaterMeter';
+    return () => { document.title = 'HeaterMeter'; };
+  });
+
   const pillCls = $derived(
     freshness ? 'bg-warn/15 text-warn'
       : ps.active ? 'bg-action/20 text-orange-800 dark:text-orange-300'
@@ -581,7 +590,7 @@
         <span>Cooking <b class="opacity-100">{cookElapsed()}</b></span>
       {/if}
       {#if status.servo_pct != null && status.servo_pct > 0}
-        <span>Damper <b class="opacity-100">{fmt(status.servo_pct)}%</b></span>
+        <span>Servo <b class="opacity-100">{fmt(status.servo_pct)}%</b></span>
       {/if}
       {#if !fuelInfo.alerted && fuelInfo.depleting && fuelInfo.est_secs_to_max}
         <span>Fuel <b class="opacity-100">{fuelHours(fuelInfo.est_secs_to_max)}</b></span>
@@ -607,7 +616,7 @@
           {#if act.levers.length}
             <div class="flex flex-wrap gap-2 pt-1.5">
               {#each act.levers as l}
-                <button class="h-11 px-4 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={l.run}>{l.label}</button>
+                <button class="h-11 px-3 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={l.run}>{l.label}</button>
               {/each}
             </div>
           {/if}
@@ -670,7 +679,7 @@
       {:else}
         <!-- Hint only where there's room (desktop); on the narrow mobile cards it
              would crowd the probe name. -->
-        <span class="text-[10px] opacity-40 shrink-0 hidden lg:inline">tap to set</span>
+        <span class="text-[11px] opacity-60 shrink-0 hidden lg:inline">tap to set</span>
       {/if}
     </div>
     {#if f.val == null && !(health[f.ch] === 'disconnected' || health[f.ch] === 'fault')}

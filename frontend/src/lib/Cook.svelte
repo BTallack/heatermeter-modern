@@ -400,7 +400,7 @@
       {#if servePlan?.enabled}
         <div class="mt-3 rounded-xl bg-black/5 dark:bg-white/5 p-3">
           <div class="flex items-center gap-2 text-sm">
-            <span class="font-semibold">Dinner {fmtClock(servePlan.serve_ts)}</span>
+            <span class="font-semibold">Eat at {fmtClock(servePlan.serve_ts)}</span>
             <span class={'ml-auto ' + (SERVE_COLORS[servePlan.assessment?.status] || 'opacity-50')}>
               {serveLabel(servePlan.assessment)}
             </span>
