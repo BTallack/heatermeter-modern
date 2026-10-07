@@ -54,6 +54,15 @@ h1, h2, h3, summary { font-family: var(--font-display); }
 /* Tabular figures so live readouts don't jiggle as digits change. */
 .nums { font-variant-numeric: tabular-nums; }
 
+/* Native modal dialogs (Dialog.svelte): the <dialog> is only a positioning
+   shell; the card inside carries the surface. */
+dialog.hm-dialog {
+  padding: 0; border: 0; background: transparent; color: inherit;
+  width: min(24rem, calc(100% - 2rem)); max-width: none; overflow: visible;
+}
+dialog.hm-dialog.hm-dialog-xs { width: min(20rem, calc(100% - 2rem)); }
+dialog.hm-dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+
 /* App card surface (theme-aware). Used instead of Konsta <Card> so margins and
    spacing are fully under our control — Konsta's Card adds its own margins that
    were collapsing the gap between rows. Radius/padding via Tailwind on the el. */

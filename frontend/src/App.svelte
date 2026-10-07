@@ -6,6 +6,7 @@
   import Graph from './lib/Graph.svelte';
   import Cook from './lib/Cook.svelte';
   import Settings from './lib/Settings.svelte';
+  import Toasts from './lib/Toasts.svelte';
   import { getTheme, applyTheme, onSystemChange } from './lib/theme.js';
   import { getJSON, postJSON, setAuthToken, authToken } from './lib/api.js';
 
@@ -254,16 +255,16 @@
 
     {#if isDesktop}
       <!-- Desktop: no sidebar. Temps band above the graph, full width. -->
-      <div class="mx-auto max-w-[1100px] px-6 pt-5 pb-24 space-y-5">
+      <main class="mx-auto max-w-[1100px] px-6 pt-5 pb-24 space-y-5">
         <div class="flex items-center">
           <span class="font-display font-extrabold text-lg tracking-tight">HeaterMeter</span>
         </div>
         {#if !welcomed}{@render welcome()}{/if}
         <Dashboard embedded />
         <Graph embedded />
-      </div>
+      </main>
     {:else}
-      <div>
+      <main>
         {#if tab === 'dash'}
           {#if !welcomed}<div class="px-4 pt-4">{@render welcome()}</div>{/if}
           <Dashboard />
@@ -274,14 +275,16 @@
         {:else if tab === 'settings'}
           <Settings onTheme={syncTheme} />
         {/if}
-      </div>
+      </main>
     {/if}
 
   </Page>
 
+  <Toasts desktop={isDesktop} />
+
   <!-- Mobile/tablet: bottom icon nav with a visible top separation. -->
   {#if !isDesktop}
-    <nav class="fixed bottom-0 left-0 right-0 z-30 flex
+    <nav aria-label="Sections" class="fixed bottom-0 left-0 right-0 z-30 flex
                 border-t border-black/10 dark:border-white/10
                 bg-white/95 dark:bg-neutral-900/95 backdrop-blur"
          style="padding-bottom: env(safe-area-inset-bottom)">

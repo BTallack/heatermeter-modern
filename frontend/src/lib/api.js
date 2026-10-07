@@ -44,15 +44,22 @@ export const postJSON = (p, b) => reqJSON('POST', p, b);
 export const patchJSON = (p, b) => reqJSON('PATCH', p, b);
 export const delJSON = (p) => reqJSON('DELETE', p);
 
-// Live WebSocket with auto-reconnect. Returns a stop() function.
-export function connectWs(onMsg) {
+// Live WebSocket with auto-reconnect. Returns a stop() function. *onConn* (if
+// given) hears true when the socket opens and false when it drops, so the UI
+// can say "Reconnecting…" instead of showing the last numbers as if live.
+export function connectWs(onMsg, onConn) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   let ws, timer, closed = false;
   const open = () => {
     const q = _token ? ('?token=' + encodeURIComponent(_token)) : '';
     ws = new WebSocket(`${proto}://${location.host}/api/ws${q}`);
+    ws.onopen = () => { if (onConn) onConn(true); };
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (_) {} };
-    ws.onclose = () => { if (!closed) timer = setTimeout(open, 2000); };
+    ws.onclose = () => {
+      if (closed) return;
+      if (onConn) onConn(false);
+      timer = setTimeout(open, 2000);
+    };
   };
   open();
   return () => { closed = true; clearTimeout(timer); if (ws) ws.close(); };
