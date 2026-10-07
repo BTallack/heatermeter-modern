@@ -552,7 +552,8 @@
 {/snippet}
 
 {#snippet pit(extra = '')}
-  <section class={'hm-card rounded-3xl p-5 ' + (guardTone ? `hm-alert-${guardTone} ` : '') + extra} aria-labelledby="pit-h">
+  <section class={'hm-card rounded-3xl p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-6 ' + (guardTone ? `hm-alert-${guardTone} ` : '') + extra} aria-labelledby="pit-h">
+    <div>
     <div class="flex items-center justify-between gap-2">
       <h2 id="pit-h" class="font-sans text-xs uppercase tracking-widest opacity-60 font-semibold">{names[0] || 'Pit'}</h2>
       <span class={'text-xs px-2 py-0.5 rounded-full font-semibold tabular-nums ' + pillCls}>{freshness ?? ps.label}</span>
@@ -586,9 +587,11 @@
         <span>Fuel <b class="opacity-100">{fuelHours(fuelInfo.est_secs_to_max)}</b></span>
       {/if}
     </div>
+    </div>
 
     {#if alertLine || whenLines.length || act}
-      <div class="mt-4 pt-4 border-t border-black/10 dark:border-white/10 space-y-1.5 text-[15px] leading-snug">
+      <div class="mt-4 pt-4 border-t border-black/10 dark:border-white/10 space-y-1.5 text-[15px] leading-snug
+                  lg:mt-0 lg:pt-0 lg:border-t-0 lg:border-l lg:pl-6 lg:self-center">
         {#if alertLine}
           <p class={toneCls(alertLine.tone)}><b class="font-semibold">{alertLine.title}</b> {alertLine.text}</p>
         {/if}
@@ -618,7 +621,7 @@
   <section class="hm-card rounded-2xl p-4" aria-labelledby="ctl-h">
     <h2 id="ctl-h" class="sr-only">Pit controls</h2>
     <div class="lg:flex lg:items-start lg:gap-4">
-      <div class="lg:flex-1 lg:max-w-md">
+      <div class="lg:flex-1 lg:min-w-0 lg:max-w-md">
         <div class="flex items-center gap-2">
           <button class="w-11 h-11 shrink-0 rounded-xl grid place-items-center bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white active:opacity-70"
                   onclick={() => bump(-10)} aria-label="Lower the setpoint 10°">
@@ -639,17 +642,17 @@
           {#if spError}{spError}{:else if spUnsent}Not sent yet. Tap Set to change the pit to {spInput}°.{/if}
         </p>
       </div>
-      <div class="mt-1 lg:mt-0 lg:ml-auto grid grid-cols-3 gap-2 lg:w-[22rem]">
+      <div class="mt-1 lg:mt-0 lg:ml-auto grid grid-cols-3 gap-2 lg:w-[21rem] lg:shrink-0">
         {#if status.lid_countdown > 0}
           <button class="h-11 rounded-xl bg-warn/15 text-warn text-sm font-semibold leading-tight flex flex-col items-center justify-center"
                   onclick={lidCancel}>
             <span>Cancel lid</span><span class="text-xs font-normal tabular-nums opacity-80">{status.lid_countdown}s left</span>
           </button>
         {:else}
-          <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={lidOpen}>Lid open</button>
+          <button class="h-11 px-1 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold leading-tight" onclick={lidOpen}>Lid open</button>
         {/if}
-        <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={openManual}>Fan override</button>
-        <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold text-bad disabled:opacity-40 disabled:text-current"
+        <button class="h-11 px-1 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold leading-tight" onclick={openManual}>Fan override</button>
+        <button class="h-11 px-1 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold leading-tight text-bad disabled:opacity-40 disabled:text-current"
                 onclick={() => (offOpen = true)} disabled={!isCooking}>Turn off</button>
       </div>
     </div>
@@ -734,15 +737,17 @@
   </div>
 {:else}
   <!-- Phone: read top to bottom (the pit and its verdict, then the food), with
-       the controls at the bottom where the thumb is. -->
-  <div class="px-4 pt-4 pb-28 space-y-4">
-    {@render guidedStrip()}
-    {@render pit()}
+       the controls at the bottom where the thumb is. Tablet (md): two columns,
+       the pit and its controls on the left and the food stacked on the right;
+       the DOM order (pit, food, controls) stays the reading and focus order. -->
+  <div class="px-4 pt-4 pb-28 space-y-4 md:space-y-0 md:grid md:grid-cols-5 md:gap-4 md:items-start max-w-5xl mx-auto">
+    {#if guided}<div class="md:col-span-5">{@render guidedStrip()}</div>{/if}
+    <div class="md:col-span-3">{@render pit()}</div>
     <h2 class="sr-only">Food probes</h2>
-    <div class="grid grid-cols-3 gap-3">
+    <div class="grid grid-cols-3 gap-3 md:col-span-2 md:row-span-2 md:grid-cols-1">
       {#each foods as f, i}{@render probeCard(f, i, '')}{/each}
     </div>
-    {@render controls()}
+    <div class="md:col-span-3">{@render controls()}</div>
   </div>
 {/if}
 

@@ -133,7 +133,10 @@ html.dark .hm-card { background: #171717; border-color: rgba(255, 255, 255, 0.07
   border-color: rgb(251 44 54 / 0.6);
   background-image: linear-gradient(rgb(251 44 54 / 0.08), rgb(251 44 54 / 0.08));
 }
-/* Tappable probe tiles: the hairline warms on hover. */
+/* Tappable probe tiles: the hairline warms under a pointer that can hover
+   (touch screens would leave it stuck on after a tap). */
 .hm-card.hm-tile { transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1); }
-.hm-card.hm-tile:hover { border-color: rgb(255 105 0 / 0.4); }
+@media (hover: hover) {
+  .hm-card.hm-tile:hover { border-color: rgb(255 105 0 / 0.4); }
+}
 
