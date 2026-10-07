@@ -195,9 +195,9 @@
   // The board's own default names are "Food1"/"Food2"; show them as words.
   const probeLabel = (n, fallback) => (n || fallback).replace(/^Food\s*(\d)$/i, 'Food $1');
   const foods = $derived([
-    { label: probeLabel(names[1], 'Food 1'), val: status.food1, cls: 'text-green-500', bar: 'bg-green-500', pi: 1, ch: 'food1' },
-    { label: probeLabel(names[2], 'Food 2'), val: status.food2, cls: 'text-sky-400', bar: 'bg-sky-400', pi: 2, ch: 'food2' },
-    { label: probeLabel(names[3], 'Ambient'), val: status.ambient, cls: 'text-purple-400', bar: 'bg-purple-400', pi: 3, ch: 'ambient' },
+    { label: probeLabel(names[1], 'Food 1'), val: status.food1, cls: 'text-food1', bar: 'bg-food1', pi: 1, ch: 'food1' },
+    { label: probeLabel(names[2], 'Food 2'), val: status.food2, cls: 'text-food2', bar: 'bg-food2', pi: 2, ch: 'food2' },
+    { label: probeLabel(names[3], 'Ambient'), val: status.ambient, cls: 'text-food3', bar: 'bg-food3', pi: 3, ch: 'ambient' },
   ]);
 
   const parseAlarm = (v) => {
@@ -519,9 +519,9 @@
   });
 
   const toneCls = (t) => ({
-    bad: 'text-red-600 dark:text-red-400',
-    warn: 'text-amber-700 dark:text-amber-300',
-    good: 'text-green-700 dark:text-green-400',
+    bad: 'text-bad',
+    warn: 'text-warn',
+    good: 'text-ok',
     muted: 'opacity-60',
   }[t] || '');
 
@@ -538,8 +538,8 @@
   ].filter(Boolean).join(' '));
 
   const pillCls = $derived(
-    freshness ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
-      : ps.active ? 'bg-orange-600/20 text-orange-700 dark:text-orange-300'
+    freshness ? 'bg-warn/15 text-warn'
+      : ps.active ? 'bg-action/20 text-orange-800 dark:text-orange-300'
       : 'bg-neutral-500/15 text-neutral-600 dark:text-neutral-300');
 </script>
 
@@ -554,13 +554,13 @@
 {#snippet pit(extra = '')}
   <section class={'hm-card rounded-3xl p-5 ' + (guardTone ? `hm-alert-${guardTone} ` : '') + extra} aria-labelledby="pit-h">
     <div class="flex items-center justify-between gap-2">
-      <h2 id="pit-h" class="font-sans text-xs uppercase tracking-widest opacity-50 font-semibold">{names[0] || 'Pit'}</h2>
+      <h2 id="pit-h" class="font-sans text-xs uppercase tracking-widest opacity-60 font-semibold">{names[0] || 'Pit'}</h2>
       <span class={'text-xs px-2 py-0.5 rounded-full font-semibold tabular-nums ' + pillCls}>{freshness ?? ps.label}</span>
     </div>
 
     <div class="flex items-end justify-between gap-3 mt-2">
-      <div class={'font-display text-7xl lg:text-8xl font-black text-orange-500 leading-none tracking-tight tabular-nums transition-opacity ' + (stale ? 'opacity-40' : '')}>
-        {fmt(status.pit)}<span class="text-2xl opacity-50 align-top relative top-[0.12em]">°{unit}</span>
+      <div class={'font-display text-7xl lg:text-8xl font-black text-flame leading-none tracking-tight tabular-nums transition-opacity ' + (stale ? 'opacity-40' : '')}>
+        {fmt(status.pit)}<span class="text-2xl opacity-70 align-top relative top-[0.12em]">°{unit}</span>
       </div>
       {#if trend && !stale}
         <div class="pb-1 text-right tabular-nums leading-tight shrink-0">
@@ -632,16 +632,16 @@
                   onclick={() => bump(10)} aria-label="Raise the setpoint 10°">
             <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12" /><line x1="12" y1="5" x2="12" y2="19" /></svg>
           </button>
-          <button class={'px-5 h-11 shrink-0 rounded-xl bg-orange-600 text-white font-semibold active:bg-orange-700 disabled:opacity-60 ' + (spUnsent ? 'ring-2 ring-offset-2 ring-orange-500 ring-offset-white dark:ring-offset-neutral-900' : '')}
+          <button class={'px-5 h-11 shrink-0 rounded-xl bg-action text-white font-semibold active:bg-action-deep disabled:opacity-60 ' + (spUnsent ? 'ring-2 ring-offset-2 ring-action ring-offset-white dark:ring-offset-neutral-900' : '')}
                   onclick={setSp} disabled={spBusy}>{spBusy ? 'Setting…' : 'Set'}</button>
         </div>
-        <p id="sp-note" class="text-xs mt-1 min-h-4 {spError ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-300'}">
+        <p id="sp-note" class="text-xs mt-1 min-h-4 {spError ? 'text-bad' : 'text-warn'}">
           {#if spError}{spError}{:else if spUnsent}Not sent yet. Tap Set to change the pit to {spInput}°.{/if}
         </p>
       </div>
       <div class="mt-1 lg:mt-0 lg:ml-auto grid grid-cols-3 gap-2 lg:w-[22rem]">
         {#if status.lid_countdown > 0}
-          <button class="h-11 rounded-xl bg-amber-500/15 text-amber-800 dark:text-amber-200 text-sm font-semibold leading-tight flex flex-col items-center justify-center"
+          <button class="h-11 rounded-xl bg-warn/15 text-warn text-sm font-semibold leading-tight flex flex-col items-center justify-center"
                   onclick={lidCancel}>
             <span>Cancel lid</span><span class="text-xs font-normal tabular-nums opacity-80">{status.lid_countdown}s left</span>
           </button>
@@ -649,7 +649,7 @@
           <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={lidOpen}>Lid open</button>
         {/if}
         <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold" onclick={openManual}>Fan override</button>
-        <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold text-red-600 dark:text-red-400 disabled:opacity-40 disabled:text-current"
+        <button class="h-11 rounded-xl bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold text-bad disabled:opacity-40 disabled:text-current"
                 onclick={() => (offOpen = true)} disabled={!isCooking}>Turn off</button>
       </div>
     </div>
@@ -659,9 +659,9 @@
 {#snippet probeCard(f, i, extra)}
   <button class={'hm-card hm-tile rounded-2xl p-4 text-left w-full ' + extra} onclick={() => openProbe(i)}>
     <div class="flex items-center justify-between gap-1">
-      <span class="text-[11px] uppercase tracking-wider opacity-50 truncate font-semibold">{f.label}</span>
+      <span class="text-[11px] uppercase tracking-wider opacity-60 truncate font-semibold">{f.label}</span>
       {#if health[f.ch] === 'disconnected' || health[f.ch] === 'fault'}
-        <span class="text-[10px] shrink-0 px-1.5 py-0.5 rounded bg-red-500/15 text-red-500 font-semibold">
+        <span class="text-[11px] shrink-0 px-1.5 py-0.5 rounded bg-bad/15 text-bad font-semibold">
           {health[f.ch] === 'fault' ? 'sensor fault' : 'disconnected'}
         </span>
       {:else}
@@ -671,7 +671,7 @@
       {/if}
     </div>
     {#if f.val == null && !(health[f.ch] === 'disconnected' || health[f.ch] === 'fault')}
-      <div class="text-sm opacity-50 mt-2 leading-tight">Not plugged in</div>
+      <div class="text-sm opacity-60 mt-2 leading-tight">Not plugged in</div>
     {:else}
       <div class={'font-display text-3xl lg:text-4xl font-bold leading-none mt-1.5 tabular-nums transition-opacity ' + f.cls + (stale ? ' opacity-40' : '')}>
         {fmt(f.val)}<span class="text-sm opacity-50 align-top relative top-[0.5em]">°</span>
@@ -681,13 +681,13 @@
     <!-- Always reserve the target line so the card height is constant (no
          layout shift when a target appears or disappears). The done-by clock
          lives in the pit card's verdict. -->
-    <div class="text-xs mt-1.5 tabular-nums min-h-4 {targetFor(f.pi) != null && doneAt(f.val, targetFor(f.pi)) ? 'text-green-600 dark:text-green-400 font-semibold' : 'opacity-60'}">
+    <div class="text-xs mt-1.5 tabular-nums min-h-4 {targetFor(f.pi) != null && doneAt(f.val, targetFor(f.pi)) ? 'text-ok font-semibold' : 'opacity-60'}">
       {#if targetFor(f.pi) != null}→ {targetFor(f.pi)}°{tileState(f)}{/if}
     </div>
     {#if progressFor(f)}
       {@const p = progressFor(f)}
       <div class="mt-2 h-1 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden" aria-hidden="true">
-        <div class={'h-full rounded-full ' + (p.done ? 'bg-green-600 dark:bg-green-500' : f.bar)} style={`width: ${Math.round(p.pct * 100)}%`}></div>
+        <div class={'h-full rounded-full ' + (p.done ? 'bg-ok' : f.bar)} style={`width: ${Math.round(p.pct * 100)}%`}></div>
       </div>
     {/if}
   </button>
@@ -696,7 +696,7 @@
 {#snippet guidedStrip()}
   {#if guided}
     <div class={'hm-card rounded-2xl px-4 py-3 flex items-center gap-3 ' + (guided.done ? 'border border-green-600/40' : '')}>
-      <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-orange-500 shrink-0" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-flame shrink-0" aria-hidden="true">
         <path d="M12 23a7 7 0 0 0 7-7c0-2.1-1-4-2.6-5.5-.2 1.2-1.1 2.1-2.3 2.1.9-2.5.2-5.2-2.3-7.9-.5 2.7-2 3.8-3.6 5.1C6.7 11.4 5 13.5 5 16a7 7 0 0 0 7 7z" />
       </svg>
       <div class="flex-1 min-w-0">
@@ -710,7 +710,7 @@
         </div>
       </div>
       {#if guided.wrap_pending}
-        <button class="shrink-0 px-3 py-1.5 rounded-lg bg-orange-600 text-white text-sm font-semibold" onclick={guidedWrapped}>I wrapped it</button>
+        <button class="shrink-0 px-3 py-1.5 rounded-lg bg-action text-white text-sm font-semibold" onclick={guidedWrapped}>I wrapped it</button>
       {/if}
     </div>
   {/if}
@@ -777,13 +777,13 @@
              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveProbe(); } }} />
     </div>
   </div>
-  <p id="probe-error" class="text-sm text-red-600 dark:text-red-400" role={pError ? 'alert' : undefined}>{pError}</p>
+  <p id="probe-error" class="text-sm text-bad" role={pError ? 'alert' : undefined}>{pError}</p>
 
   <div class="flex items-center justify-between">
-    <button class="-ml-2 px-2 h-11 rounded-lg text-red-600 dark:text-red-400 text-sm font-semibold disabled:opacity-50" onclick={clearProbe} disabled={pBusy}>Clear target</button>
+    <button class="-ml-2 px-2 h-11 rounded-lg text-bad text-sm font-semibold disabled:opacity-50" onclick={clearProbe} disabled={pBusy}>Clear target</button>
     <div class="flex gap-2">
       <button class="px-4 h-11 rounded-lg bg-neutral-200 dark:bg-neutral-800" onclick={() => (probeOpen = false)}>Cancel</button>
-      <button class="px-4 h-11 rounded-lg bg-orange-600 text-white font-semibold disabled:opacity-60" onclick={saveProbe} disabled={pBusy}>{pBusy ? 'Saving…' : 'Save'}</button>
+      <button class="px-4 h-11 rounded-lg bg-action text-white font-semibold disabled:opacity-60" onclick={saveProbe} disabled={pBusy}>{pBusy ? 'Saving…' : 'Save'}</button>
     </div>
   </div>
 </Dialog>
@@ -797,7 +797,7 @@
   <p class="text-xs opacity-60 tabular-nums">The controller has it at {currentFan}% now.</p>
   <div class="flex gap-2 justify-end">
     <button class="px-4 h-11 rounded-lg bg-neutral-200 dark:bg-neutral-800" onclick={() => (manualOpen = false)}>Cancel</button>
-    <button class="px-4 h-11 rounded-lg bg-orange-600 text-white font-semibold disabled:opacity-60" onclick={applyManual} disabled={manualBusy}>{manualBusy ? 'Applying…' : 'Hold the fan'}</button>
+    <button class="px-4 h-11 rounded-lg bg-action text-white font-semibold disabled:opacity-60" onclick={applyManual} disabled={manualBusy}>{manualBusy ? 'Applying…' : 'Hold the fan'}</button>
   </div>
 </Dialog>
 

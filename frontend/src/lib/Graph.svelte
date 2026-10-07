@@ -11,13 +11,13 @@
   const MAX_POINTS = 20000;
   // Series order lines up with the `data` columns below.
   const SERIES = [
-    { key: 'set_point', label: 'Set', stroke: '#9aa0a6', dash: [6, 4], width: 1 },
-    { key: 'pit', label: 'Pit', stroke: '#ff5630', width: 2 },
-    { key: 'food1', label: 'Food 1', stroke: '#36b37e', width: 2 },
-    { key: 'food2', label: 'Food 2', stroke: '#00b8d9', width: 2 },
-    { key: 'compare', label: 'vs', stroke: '#a78bfa', width: 1, dash: [2, 3] },
-    { key: 'fan_pct', label: 'Fan %', stroke: '#ffd166', width: 1, scale: '%' },
-    { key: 'servo_pct', label: 'Servo %', stroke: '#9aa7b3', width: 1, dash: [4, 3], scale: '%' },
+    { key: 'set_point', label: 'Set', role: 'set', dash: [6, 4], width: 1 },
+    { key: 'pit', label: 'Pit', role: 'ember', width: 2 },
+    { key: 'food1', label: 'Food 1', role: 'food1', width: 2 },
+    { key: 'food2', label: 'Food 2', role: 'food2', width: 2 },
+    { key: 'compare', label: 'vs', role: 'food3', width: 1, dash: [2, 3] },
+    { key: 'fan_pct', label: 'Fan %', role: 'fan', width: 1, scale: '%' },
+    { key: 'servo_pct', label: 'Servo %', role: 'servo', width: 1, dash: [4, 3], scale: '%' },
   ];
 
   // Remember which series are toggled on/off across page loads + navigation.
@@ -35,6 +35,16 @@
     u.series.forEach((s, i) => { if (i > 0 && s.label && s.label !== 'vs') v[s.label] = s.show !== false; });
     try { localStorage.setItem(VIS_KEY, JSON.stringify(v)); } catch (_) {}
   }
+
+  // Colours come from the theme's colour roles (app.css), so the graph matches
+  // the Dashboard and stays legible in daylight; read again on a theme change.
+  const ROLES = ['set', 'ember', 'food1', 'food2', 'food3', 'fan', 'servo', 'axis', 'warn', 'bad', 'lid', 'resume'];
+  let pal = {};
+  function readPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    pal = Object.fromEntries(ROLES.map((r) => [r, cs.getPropertyValue('--hm-' + r).trim() || '#9aa0a6']));
+  }
+  let themeObs = null;
 
   let chartEl;
   let chart = null;
@@ -75,7 +85,7 @@
 
   function axis(extra = {}) {
     return Object.assign({
-      stroke: '#8892a0',
+      stroke: pal.axis,
       font: '12px "Work Sans Variable", system-ui, sans-serif',
       grid: { stroke: 'rgba(128,128,128,0.18)', width: 1 },
       ticks: { stroke: 'rgba(128,128,128,0.18)', width: 1 },
@@ -86,8 +96,8 @@
   function targetLinesPlugin() {
     return { hooks: { draw: (u) => {
       const lines = [
-        { v: targets.food1, color: '#36b37e' },
-        { v: targets.food2, color: '#00b8d9' },
+        { v: targets.food1, color: pal.food1 },
+        { v: targets.food2, color: pal.food2 },
       ];
       const ctx = u.ctx, { left, top, width, height } = u.bbox;
       ctx.save();
@@ -106,16 +116,15 @@
   // Auto timeline events as subtle markers along the bottom of the plot: a
   // faint vertical line + a colored dot, with a short caption for the major
   // kinds. (User notes draw their labels at the TOP - see notesPlugin.)
-  const EVENT_COLORS = {
-    lid_open: '#ffab00', lid_closed: '#ffab00',
-    stall_start: '#a78bfa', stall_end: '#a78bfa',
-    target: '#36b37e', probe_done: '#36b37e', cook_complete: '#36b37e',
-    food_target: '#36b37e',
-    setpoint: '#9aa0a6', stage: '#9aa0a6', program_done: '#9aa0a6',
-    disconnect: '#ff5630', fault: '#ff5630', reconnect: '#6b9080',
-    alarm_low: '#ff8b00', overtemp: '#ff5630',
-    pit_low: '#ff8b00', fire_dying: '#ff5630', serve_status: '#9aa0a6',
-    powerup_idle: '#9aa0a6', powerup_resume: '#6b9080',
+  // Event markers coloured by meaning (DESIGN.md's Colour Is Data rule).
+  const EVENT_ROLES = {
+    lid_open: 'lid', lid_closed: 'lid',
+    stall_start: 'food3', stall_end: 'food3',
+    target: 'food1', probe_done: 'food1', cook_complete: 'food1', food_target: 'food1',
+    setpoint: 'set', stage: 'set', program_done: 'set', serve_status: 'set', powerup_idle: 'set',
+    disconnect: 'bad', fault: 'bad', overtemp: 'bad', fire_dying: 'bad',
+    alarm_low: 'warn', pit_low: 'warn',
+    reconnect: 'resume', powerup_resume: 'resume',
   };
   const EVENT_CAPTIONS = {
     lid_open: 'Lid', stall_start: 'Stall', stall_end: 'Stall over',
@@ -134,7 +143,7 @@
         if (ev.kind === 'prediction') continue;   // forecast data, not a marker
         const x = u.valToPos(ev.ts, 'x', true);
         if (x < left || x > left + width) continue;
-        const color = EVENT_COLORS[ev.kind] || '#9aa0a6';
+        const color = pal[EVENT_ROLES[ev.kind]] || pal.set;
         ctx.strokeStyle = color; ctx.fillStyle = color;
         ctx.globalAlpha = 0.25; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke();
@@ -155,8 +164,8 @@
       if (!notes.length) return;
       const ctx = u.ctx, { left, top, width, height } = u.bbox;
       ctx.save();
-      ctx.strokeStyle = '#ffab00'; ctx.fillStyle = '#ffab00';
-      ctx.lineWidth = 1; ctx.font = '11px sans-serif';
+      ctx.strokeStyle = pal.lid; ctx.fillStyle = pal.lid;
+      ctx.lineWidth = 1; ctx.font = '11px "Work Sans Variable", system-ui, sans-serif';
       for (const n of notes) {
         const x = u.valToPos(n.ts, 'x', true);
         if (x < left || x > left + width) continue;
@@ -185,6 +194,7 @@
   }
 
   function makeChart() {
+    readPalette();
     chart = new uPlot({
       width: chartEl.clientWidth || 600, height: 330,
       // Temperature scale 'y' is intentionally left unconfigured so uPlot
@@ -205,7 +215,7 @@
         // data lands on the same scale the temperature axis renders. Without the
         // `|| 'y'`, uPlot creates a stray scale keyed "undefined" for the lines
         // while the 'y' axis stays empty (axis shows 0-250, lines don't match).
-        label: s.label, stroke: s.stroke, width: s.width, dash: s.dash, scale: s.scale || 'y',
+        label: s.label, stroke: pal[s.role], width: s.width, dash: s.dash, scale: s.scale || 'y',
         show: initialShow(s),
         spanGaps: false, points: { show: false },
         value: (u, v) => (v == null ? '--' : v.toFixed(1) + (s.scale === '%' ? '%' : '°')),
@@ -308,6 +318,16 @@
     loadSessions();
     ro = new ResizeObserver(() => chart && chart.setSize({ width: chartEl.clientWidth || 600, height: 330 }));
     ro.observe(chartEl);
+    // Light/dark switch: rebuild with that theme's colours (uPlot bakes them in).
+    let wasDark = document.documentElement.classList.contains('dark');
+    themeObs = new MutationObserver(() => {
+      const dark = document.documentElement.classList.contains('dark');
+      if (dark === wasDark || !chart) return;
+      wasDark = dark;
+      chart.destroy();
+      makeChart();
+    });
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     stop = connectWs((m) => {
       if (m.event?.type === 'timeline') {
         events = [...events, m.event];
@@ -334,7 +354,7 @@
     }, 10000);
   });
   onDestroy(() => {
-    if (ro) ro.disconnect(); if (chart) chart.destroy(); stop && stop();
+    if (ro) ro.disconnect(); if (themeObs) themeObs.disconnect(); if (chart) chart.destroy(); stop && stop();
     clearInterval(staleTimer);
     if (onVis) document.removeEventListener('visibilitychange', onVis);
   });
@@ -354,7 +374,7 @@
       <option value="">Compare…</option>
       {#each sessions as s}<option value={s.id}>{s.name || ('Cook #' + s.id)}</option>{/each}
     </select>
-    <button class="ml-auto px-4 h-10 inline-flex items-center rounded-lg bg-orange-600 text-white font-semibold" onclick={() => (noteOpen = true)}>+ Note</button>
+    <button class="ml-auto px-4 h-10 inline-flex items-center rounded-lg bg-action text-white font-semibold" onclick={() => (noteOpen = true)}>+ Note</button>
   </div>
 
   <div class="hm-card rounded-2xl p-2"><div bind:this={chartEl}></div></div>
@@ -388,7 +408,7 @@
       <input type="file" accept="image/*" class="w-full text-sm" onchange={(e) => (noteFile = e.target.files[0])} />
       <div class="flex gap-2 justify-end">
         <button class="px-4 py-2 rounded-lg bg-neutral-200 dark:bg-neutral-800" onclick={() => (noteOpen = false)}>Cancel</button>
-        <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={saveNote}>Add</button>
+        <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold" onclick={saveNote}>Add</button>
       </div>
     </div>
   </div>

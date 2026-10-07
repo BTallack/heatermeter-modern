@@ -436,7 +436,7 @@
           <input class="w-14 text-center bg-transparent py-2 tabular-nums" type="number" bind:value={startTemp} aria-label="Pit temperature" />
           <span class="opacity-50 text-sm">°{unit}</span>
         </div>
-        <button class="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-semibold" onclick={startCook}>Start cook</button>
+        <button class="flex-1 py-2.5 rounded-xl bg-action text-white font-semibold" onclick={startCook}>Start cook</button>
       </div>
       <div class="grid grid-cols-4 gap-2 mt-2">
         {#each quickTemps as q}
@@ -472,7 +472,7 @@
       <input type="checkbox" checked={ambFood} onchange={toggleAmb} />
       Use Ambient probe as a food probe
     </label>
-    <button class="mt-3 w-full py-2.5 rounded-xl bg-orange-600 text-white font-semibold" onclick={saveTargets}>Save targets</button>
+    <button class="mt-3 w-full py-2.5 rounded-xl bg-action text-white font-semibold" onclick={saveTargets}>Save targets</button>
   </div>
 
   <!-- Timers -->
@@ -482,7 +482,7 @@
       <input class="flex-1 min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" placeholder="Label (e.g. spritz)" bind:value={timerName} />
       <input class="w-20 text-center bg-neutral-200 dark:bg-neutral-800 rounded-lg py-2 tabular-nums" type="number" min="1" bind:value={timerMin} />
       <span class="self-center text-sm opacity-50">min</span>
-      <button class="px-4 rounded-lg bg-orange-600 text-white font-semibold text-sm" onclick={addTimer}>Start</button>
+      <button class="px-4 rounded-lg bg-action text-white font-semibold text-sm" onclick={addTimer}>Start</button>
     </div>
     {#if timers.length}
       <div class="mt-3 space-y-1">
@@ -519,7 +519,7 @@
       </ol>
       <div class="mt-3 flex gap-2">
         {#if guidedActive.wrap_pending}
-          <button class="flex-1 px-3 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={confirmWrap}>I wrapped it</button>
+          <button class="flex-1 px-3 py-2 rounded-lg bg-action text-white font-semibold" onclick={confirmWrap}>I wrapped it</button>
         {/if}
         {#if guidedActive.done}
           <span class="flex-1 text-sm text-green-600 dark:text-green-400 font-semibold self-center">Target reached. Rest and enjoy.</span>
@@ -548,7 +548,7 @@
         <p class="text-xs opacity-60 mt-2">{guidedSelCook.description} Pit {guidedSelCook.pit_setpoint}°, pull at {guidedSelCook.food_target}°, rest {Math.round((guidedSelCook.rest_secs || 0) / 60)} min.</p>
       {/if}
       <label class="flex items-center gap-2 text-sm mt-2"><input type="checkbox" bind:checked={guidedKeepWarm} /> Drop pit to keep-warm when the food hits its target</label>
-      <button class="mt-2 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full disabled:opacity-40" disabled={!guidedSel} onclick={startGuided}>Start Guided Cook</button>
+      <button class="mt-2 px-4 py-2 rounded-lg bg-action text-white font-semibold w-full disabled:opacity-40" disabled={!guidedSel} onclick={startGuided}>Start Guided Cook</button>
     {/if}
   </div>
 
@@ -577,7 +577,7 @@
     {/if}
 
     {#if running}
-      <div class="rounded-xl bg-orange-600/15 p-3 mb-3">
+      <div class="rounded-xl bg-action/15 p-3 mb-3">
         <div class="font-semibold">{prog.name || 'Running'}</div>
         <div class="text-sm opacity-70">Stage {(prog.stage_index ?? 0) + 1} of {prog.stage_count}: {prog.stage_name || '—'}</div>
         <div class="flex gap-2 mt-2">
@@ -626,7 +626,7 @@
     <div class="flex gap-2 mt-3">
       <input class="flex-1 min-w-0 bg-neutral-200 dark:bg-neutral-800 rounded-lg px-3 py-2 text-sm" placeholder="Program name (to save)" bind:value={progName} />
       <button class="px-4 rounded-lg bg-neutral-200 dark:bg-neutral-800 text-sm" onclick={saveProgram}>Save</button>
-      <button class="px-4 rounded-lg bg-orange-600 text-white font-semibold text-sm" onclick={() => startProgram(stages, progName)}>Start</button>
+      <button class="px-4 rounded-lg bg-action text-white font-semibold text-sm" onclick={() => startProgram(stages, progName)}>Start</button>
     </div>
 
     {#if saved.length}
@@ -636,7 +636,7 @@
           <div class="flex items-center gap-2 py-1.5 text-sm">
             <span class="flex-1 truncate">{p.name}</span>
             <button class="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/10" onclick={() => loadStages(p)}>Edit</button>
-            <button class="text-xs px-2 py-1 rounded bg-orange-600 text-white" onclick={() => startProgram(p.stages, p.name)}>Run</button>
+            <button class="text-xs px-2 py-1 rounded bg-action text-white" onclick={() => startProgram(p.stages, p.name)}>Run</button>
             <button class="text-xs px-2 py-1 rounded text-red-500" onclick={() => deleteProgram(p.id)}>✕</button>
           </div>
         {/each}

@@ -782,7 +782,7 @@
     <div class="flex gap-1.5 overflow-x-auto no-scrollbar">
       {#each SETTINGS_TABS as t}
         <button class={'px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ' +
-                       (sTab === t.id ? 'bg-orange-600 text-white' : 'bg-black/5 dark:bg-white/10 opacity-80 hover:opacity-100')}
+                       (sTab === t.id ? 'bg-action text-white' : 'bg-black/5 dark:bg-white/10 opacity-80 hover:opacity-100')}
                 onclick={() => setSettingsTab(t.id)}>{t.label}</button>
       {/each}
     </div>
@@ -820,7 +820,7 @@
           </div>
         {/each}
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveProbes}>Save Names & Calibration</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveProbes}>Save Names & Calibration</button>
     </div>
   </details>
 
@@ -839,7 +839,7 @@
         <div><label class="block"><span class="block text-xs opacity-60 mb-1">Hot after (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.high_dwell_secs} /></label></div>
         <div class="col-span-2"><label class="block"><span class="block text-xs opacity-60 mb-1">Quiet after a lid open (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pg.enabled} bind:value={pg.lid_grace_secs} /></label></div>
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={savePitGuard}>Save Pit Guard</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={savePitGuard}>Save Pit Guard</button>
 
       <details class="rounded-xl bg-black/5 dark:bg-white/5 p-3">
         <summary class="cursor-pointer select-none text-sm font-semibold">Hardware safety limits (advanced)</summary>
@@ -866,7 +866,7 @@
         <div><label class="block"><span class="block text-xs opacity-60 mb-1">Blip window (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pu.enabled} bind:value={pu.blip_secs} /></label></div>
         <div><label class="block"><span class="block text-xs opacity-60 mb-1">Cold pit below (°)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!pu.enabled} bind:value={pu.cold_below} /></label></div>
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={savePowerUp}>Save Power-up Behavior</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={savePowerUp}>Save Power-up Behavior</button>
     </div>
   </details>
 
@@ -883,7 +883,7 @@
         <p class="text-xs opacity-50 mt-1">How long a probe must read nothing before it counts as disconnected (filters brief glitches).</p>
       </div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={pw.stall_enabled} /> Detect the stall (heads-up when a food probe plateaus, and when it breaks out)</label>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveProbeWatch}>Save Sensor Alerts</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveProbeWatch}>Save Sensor Alerts</button>
     </div>
   </details>
 
@@ -893,8 +893,8 @@
     <div class="px-4 pb-4 space-y-3">
       <p class="text-xs opacity-60">Switch the controller between Fahrenheit and Celsius. Your setpoint, alarm targets, and probe offsets are converted automatically, and Home Assistant follows the change.</p>
       <div class="flex gap-2">
-        <button class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (units === 'F' ? 'bg-orange-600 text-white' : 'bg-neutral-200 dark:bg-neutral-800')} onclick={() => setUnits('F')}>Fahrenheit (°F)</button>
-        <button class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (units === 'C' ? 'bg-orange-600 text-white' : 'bg-neutral-200 dark:bg-neutral-800')} onclick={() => setUnits('C')}>Celsius (°C)</button>
+        <button class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (units === 'F' ? 'bg-action text-white' : 'bg-neutral-200 dark:bg-neutral-800')} onclick={() => setUnits('F')}>Fahrenheit (°F)</button>
+        <button class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (units === 'C' ? 'bg-action text-white' : 'bg-neutral-200 dark:bg-neutral-800')} onclick={() => setUnits('C')}>Celsius (°C)</button>
       </div>
     </div>
   </details>
@@ -914,7 +914,7 @@
               <span class="flex-1 text-sm font-semibold truncate">{p.name}
                 {#if profiles.active === p.name}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-600/15 text-green-700 dark:text-green-400 ml-1">active</span>{/if}
               </span>
-              <button class="text-xs px-2 py-1 rounded bg-orange-600 text-white" onclick={() => applyProfile(p.name)}>Apply</button>
+              <button class="text-xs px-2 py-1 rounded bg-action text-white" onclick={() => applyProfile(p.name)}>Apply</button>
               <button class="text-xs px-2 py-1 rounded text-red-500" onclick={() => deleteProfile(p.name)}>✕</button>
             </div>
           {/each}
@@ -953,7 +953,7 @@
           </div>
         {/each}
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={savePid}>Save PID</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={savePid}>Save PID</button>
 
       <div class="border-t border-black/10 dark:border-white/10 pt-3 space-y-2">
         <div class="flex items-center justify-between">
@@ -1001,7 +1001,7 @@
             {#if tuneStatus.error}<div class="text-red-500">{tuneStatus.error}</div>{/if}
             {#if tuneStatus.result}
               <div class="mt-1">Result: P {tuneStatus.result.p ?? tuneStatus.result.kp} · I {tuneStatus.result.i ?? tuneStatus.result.ki} · D {tuneStatus.result.d ?? tuneStatus.result.kd}
-                <button class="ml-2 underline text-orange-600" onclick={applyTuneResult}>Load into fields</button>
+                <button class="ml-2 underline text-action" onclick={applyTuneResult}>Load into fields</button>
               </div>
             {/if}
           </div>
@@ -1043,7 +1043,7 @@
         <label class="flex items-center gap-2"><input type="checkbox" bind:checked={fan.invert_fan} /> Invert fan</label>
         <label class="flex items-center gap-2"><input type="checkbox" bind:checked={fan.invert_servo} /> Invert servo</label>
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveFan}>Save Blower &amp; Servo</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveFan}>Save Blower &amp; Servo</button>
     </div>
   </details>
 
@@ -1057,7 +1057,7 @@
         <div><label class="block"><span class="block text-xs opacity-60 mb-1">Max duration (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" bind:value={lid.duration_seconds} /></label></div>
       </div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={lid.active} /> Lid detection enabled</label>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLid}>Save Lid Detection</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveLid}>Save Lid Detection</button>
 
       <div class="pt-3 mt-1 border-t border-neutral-300 dark:border-neutral-700 space-y-3">
         <div>
@@ -1069,7 +1069,7 @@
           <div><label class="block"><span class="block text-xs opacity-60 mb-1">Recovery rise (°)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.recover_delta} /></label></div>
           <div><label class="block"><span class="block text-xs opacity-60 mb-1">Settle delay (s)</span><input class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-lg px-2 py-2 nums" type="number" disabled={!lidRec.enabled} bind:value={lidRec.min_armed_secs} /></label></div>
         </div>
-        <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLidRecovery}>Save Smart Recovery</button>
+        <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveLidRecovery}>Save Smart Recovery</button>
       </div>
     </div>
   </details>
@@ -1103,7 +1103,7 @@
           </label>
         </div>
       {/if}
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveCookdone}>Save Cook Completion</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveCookdone}>Save Cook Completion</button>
     </div>
   </details>
 
@@ -1145,7 +1145,7 @@
           </div>
         {/each}
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={saveLcd}>Save Display</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={saveLcd}>Save Display</button>
 
       <div class="pt-2 border-t border-black/10 dark:border-white/10">
         <span class="block text-xs opacity-60 mb-1">Send a message to the display</span>
@@ -1198,7 +1198,7 @@
         {#if selectedImage?.eeprom_reset}
           <p class="text-xs text-amber-600 dark:text-amber-400">This version resets the controller to defaults. Your calibration, names, PID, and alarms are saved now and restored automatically.</p>
         {/if}
-        <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full disabled:opacity-40"
+        <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full disabled:opacity-40"
                 disabled={!fwSel || selectedImage?.installed} onclick={() => openFlash('flash')}>
           {selectedImage?.installed ? 'Already installed' : 'Update firmware'}
         </button>
@@ -1274,7 +1274,7 @@
               <div class="text-sm font-semibold">Update available: {hu.available.version}</div>
               {#if hu.available.changelog}<p class="text-xs opacity-70 whitespace-pre-wrap">{hu.available.changelog}</p>{/if}
             </div>
-            <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={() => applyHostUpdate('update')}>Update to {hu.available.version}</button>
+            <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={() => applyHostUpdate('update')}>Update to {hu.available.version}</button>
           {:else}
             <p class="text-xs opacity-60">You are on the latest version ({hu.available.version}).</p>
           {/if}
@@ -1318,7 +1318,7 @@
           </label>
         </div>
       </div>
-      <button class="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold w-full" onclick={cleanupDb}>Save &amp; clean up now</button>
+      <button class="px-4 py-2 rounded-lg bg-action text-white font-semibold w-full" onclick={cleanupDb}>Save &amp; clean up now</button>
     </div>
   </details>
 
@@ -1396,7 +1396,7 @@
       </div>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold disabled:opacity-50" disabled={mqttBusy} onclick={testMqtt}>Test Connection</button>
-        <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold disabled:opacity-50" disabled={mqttBusy} onclick={saveMqtt}>Save</button>
+        <button class="flex-1 px-4 py-2 rounded-lg bg-action text-white font-semibold disabled:opacity-50" disabled={mqttBusy} onclick={saveMqtt}>Save</button>
       </div>
     </div>
   </details>
@@ -1416,7 +1416,7 @@
       </div>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-neutral-700 text-white font-semibold disabled:opacity-50" disabled={notifyBusy} onclick={testNotify}>Send Test</button>
-        <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold disabled:opacity-50" disabled={notifyBusy} onclick={saveNotify}>Save</button>
+        <button class="flex-1 px-4 py-2 rounded-lg bg-action text-white font-semibold disabled:opacity-50" disabled={notifyBusy} onclick={saveNotify}>Save</button>
       </div>
     </div>
   </details>
@@ -1432,7 +1432,7 @@
       <div class="flex gap-2">
         {#each [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']] as [val, label]}
           <button
-            class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (theme === val ? 'bg-orange-600 text-white' : 'bg-neutral-200 dark:bg-neutral-800')}
+            class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (theme === val ? 'bg-action text-white' : 'bg-neutral-200 dark:bg-neutral-800')}
             onclick={() => chooseTheme(val)}>{label}</button>
         {/each}
       </div>
@@ -1440,7 +1440,7 @@
       <div class="flex gap-2">
         {#each [['modal', 'Popup'], ['left', 'Left sidebar'], ['right', 'Right sidebar']] as [val, label]}
           <button
-            class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (panelStyle === val ? 'bg-orange-600 text-white' : 'bg-neutral-200 dark:bg-neutral-800')}
+            class={'flex-1 px-4 py-2 rounded-lg font-semibold ' + (panelStyle === val ? 'bg-action text-white' : 'bg-neutral-200 dark:bg-neutral-800')}
             onclick={() => choosePanelStyle(val)}>{label}</button>
         {/each}
       </div>
@@ -1474,7 +1474,7 @@
         </label>
       </div>
       <div class="flex gap-2">
-        <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={saveAuthPassword}>{authCfg.enabled ? 'Change password' : 'Enable password'}</button>
+        <button class="flex-1 px-4 py-2 rounded-lg bg-action text-white font-semibold" onclick={saveAuthPassword}>{authCfg.enabled ? 'Change password' : 'Enable password'}</button>
         {#if authCfg.enabled}
           <button class="px-4 py-2 rounded-lg bg-neutral-200 dark:bg-neutral-800 font-semibold" onclick={disableAuth}>Turn off</button>
         {/if}
@@ -1489,7 +1489,7 @@
       <p class="text-xs opacity-60">Download a full backup of probe calibration, names, PID, alarms, fan, display, MQTT/notify settings, and saved cook programs. Restore it here or on another HeaterMeter.</p>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={backupSecrets} /> Include passwords &amp; tokens</label>
       <div class="flex gap-2">
-        <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={downloadBackup}>Download backup</button>
+        <button class="flex-1 px-4 py-2 rounded-lg bg-action text-white font-semibold" onclick={downloadBackup}>Download backup</button>
         <label class="flex-1 px-4 py-2 rounded-lg bg-neutral-200 dark:bg-neutral-800 font-semibold text-center cursor-pointer">
           Restore from file
           <input type="file" accept="application/json,.json" class="hidden" onchange={restoreBackup} />
@@ -1508,7 +1508,7 @@
       <div class="pt-2 border-t border-black/10 dark:border-white/10 space-y-2">
         <button class="px-3 py-2 rounded-lg bg-neutral-700 text-white text-sm w-full"
                 onclick={() => window.dispatchEvent(new Event('hm-run-wizard'))}>Run first-time setup again</button>
-        <a class="text-orange-600 underline text-sm" href="https://github.com/BTallack/heatermeter-modern" target="_blank" rel="noopener">Project on GitHub</a>
+        <a class="text-action underline text-sm" href="https://github.com/BTallack/heatermeter-modern" target="_blank" rel="noopener">Project on GitHub</a>
       </div>
     </div>
   </details>
@@ -1545,7 +1545,7 @@
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={fwConfirm} /> I understand, proceed</label>
       <div class="flex gap-2">
         <button class="flex-1 px-4 py-2 rounded-lg bg-neutral-300 dark:bg-neutral-700 font-semibold" onclick={() => (fwModal = false)}>Cancel</button>
-        <button class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold disabled:opacity-40"
+        <button class="flex-1 px-4 py-2 rounded-lg bg-action text-white font-semibold disabled:opacity-40"
                 disabled={!fwConfirm} onclick={() => doFlash(fwAction)}>
           {fwAction === 'rollback' ? 'Roll back' : 'Flash now'}
         </button>

@@ -18,6 +18,59 @@
   --font-display: 'Roboto Slab Variable', ui-serif, Georgia, serif;
 }
 
+/* Colour roles, each with a light and a dark value (DESIGN.md "Colors").
+   The light theme is daylight at the grill, so every role there is deep
+   enough to read in sun: text roles reach 4.5:1 on white, graph lines 3:1.
+   `@theme inline` turns each role into utilities (text-flame, bg-food1, ...)
+   that follow the theme. */
+@theme inline {
+  --color-flame: var(--hm-flame);
+  --color-ember: var(--hm-ember);
+  --color-action: var(--hm-action);
+  --color-action-deep: var(--hm-action-deep);
+  --color-food1: var(--hm-food1);
+  --color-food2: var(--hm-food2);
+  --color-food3: var(--hm-food3);
+  --color-ok: var(--hm-food1);
+  --color-warn: var(--hm-warn);
+  --color-bad: var(--hm-bad);
+}
+:root {
+  --hm-flame: #c2410c;        /* the pit numeral */
+  --hm-ember: #d9400f;        /* the pit as data (graph trace) */
+  --hm-action: #d03c00;       /* Live Coal: what you press (white text 4.85:1) */
+  --hm-action-deep: #b33300;  /* Banked Coal: pressed / hovered */
+  --hm-food1: #1e7d55;        /* Green Wood: Food 1, and "done" */
+  --hm-food2: #00779e;        /* Blue Flame: Food 2 */
+  --hm-food3: #6b4fd8;        /* Violet Smoke: the third probe, the stall */
+  --hm-warn: #b45309;         /* Cinder: running low, needs attention */
+  --hm-bad: #c10007;          /* Flare Red: something has gone wrong */
+  --hm-set: #6b7178;          /* Smoke: the setpoint line, neutral markers */
+  --hm-fan: #a87600;          /* Spark: the fan trace */
+  --hm-servo: #66717c;
+  --hm-axis: #5f6873;         /* graph axis text */
+  --hm-lid: #a86b00;          /* Amber Glow: the lid */
+  --hm-resume: #4f7a69;
+}
+html.dark {
+  --hm-flame: #ff6900;
+  --hm-ember: #ff5630;
+  --hm-food1: #36b37e;
+  --hm-food2: #00b8d9;
+  --hm-food3: #a78bfa;
+  --hm-warn: #ff8b00;
+  --hm-bad: #ff5a5f;
+  --hm-set: #9aa0a6;
+  --hm-fan: #ffd166;
+  --hm-servo: #9aa7b3;
+  --hm-axis: #8892a0;
+  --hm-lid: #ffab00;
+  --hm-resume: #6b9080;
+}
+
+/* Native controls take the action colour instead of the browser's blue. */
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--hm-action); }
+
 /* Ember-orange accent (matches the pit color). Overrides Konsta's primary so
    the navbar/tabbar/buttons pick it up. Must come after the konsta import. */
 :root {

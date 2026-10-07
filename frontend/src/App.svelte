@@ -149,21 +149,21 @@
       </div>
       <input class="w-full bg-neutral-800 rounded-lg px-3 py-2.5" type="password" placeholder="Password" autocomplete="current-password" bind:value={loginPw} />
       {#if loginErr}<p class="text-sm text-red-400">{loginErr}</p>{/if}
-      <button class="w-full px-4 py-2.5 rounded-lg bg-orange-600 font-semibold disabled:opacity-50" disabled={loginBusy} type="submit">{loginBusy ? 'Signing in…' : 'Sign in'}</button>
+      <button class="w-full px-4 py-2.5 rounded-lg bg-action font-semibold disabled:opacity-50" disabled={loginBusy} type="submit">{loginBusy ? 'Signing in…' : 'Sign in'}</button>
     </form>
   </div>
 {/if}
 
 {#snippet welcome()}
   <div class="hm-card rounded-2xl p-4 flex items-start gap-3">
-    <svg viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-orange-500 shrink-0" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-flame shrink-0" aria-hidden="true">
       <path d="M12 23a7 7 0 0 0 7-7c0-2.1-1-4-2.6-5.5-.2 1.2-1.1 2.1-2.3 2.1.9-2.5.2-5.2-2.3-7.9-.5 2.7-2 3.8-3.6 5.1C6.7 11.4 5 13.5 5 16a7 7 0 0 0 7 7z" />
     </svg>
     <div class="flex-1 min-w-0">
       <div class="font-display font-bold">Welcome to HeaterMeter</div>
       <p class="text-sm opacity-70 mt-0.5">Tap a probe to set a target temperature. Open Settings to name your probes and pick a PID preset for your cooker.</p>
       <div class="flex gap-2 mt-3">
-        <button class="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-sm font-semibold" onclick={openWizard}>Set up my cooker</button>
+        <button class="px-3 py-1.5 rounded-lg bg-action text-white text-sm font-semibold" onclick={openWizard}>Set up my cooker</button>
         <button class="px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-sm" onclick={openSettings}>Open Settings</button>
         <button class="px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-sm" onclick={dismissWelcome}>Got it</button>
       </div>
@@ -223,7 +223,7 @@
       {/if}
       <div class="flex gap-2 pt-1">
         <button class="px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 text-sm" onclick={() => { wizardOpen = false; dismissWelcome(); }}>Skip</button>
-        <button class="flex-1 px-3 py-2 rounded-lg bg-orange-600 text-white font-semibold" onclick={wizardNext}>{wizardStep >= 2 ? 'Start cooking' : 'Next'}</button>
+        <button class="flex-1 px-3 py-2 rounded-lg bg-action text-white font-semibold" onclick={wizardNext}>{wizardStep >= 2 ? 'Start cooking' : 'Next'}</button>
       </div>
     </div>
   </div>
@@ -298,7 +298,7 @@
       {#each NAV as n}
         <button
           class={'flex-1 flex items-center justify-center py-3 transition-colors ' +
-            (tab === n.id ? 'text-orange-600' : 'text-neutral-500 dark:text-neutral-400')}
+            (tab === n.id ? 'text-action' : 'text-neutral-500 dark:text-neutral-400')}
           onclick={() => (tab = n.id)}
           aria-label={n.label}
           aria-current={tab === n.id ? 'page' : undefined}>
@@ -313,7 +313,7 @@
     <div class="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
       <button
         class={'w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-colors ' +
-          (modal === 'cook' ? 'bg-orange-700 text-white ring-2 ring-orange-300' : 'bg-orange-600 text-white hover:bg-orange-700')}
+          (modal === 'cook' ? 'bg-action-deep text-white ring-2 ring-orange-300' : 'bg-action text-white hover:bg-action-deep')}
         onclick={() => toggleModal('cook')} aria-label="Cook" title="Cook">
         <svg viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6" aria-hidden="true">
           <path d="M12 23a7 7 0 0 0 7-7c0-2.1-1-4-2.6-5.5-.2 1.2-1.1 2.1-2.3 2.1.9-2.5.2-5.2-2.3-7.9-.5 2.7-2 3.8-3.6 5.1C6.7 11.4 5 13.5 5 16a7 7 0 0 0 7 7z"/>
