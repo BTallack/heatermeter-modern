@@ -62,6 +62,13 @@
     readPanelStyle();
     window.addEventListener('hm-prefs', readPanelStyle);
     window.addEventListener('hm-run-wizard', openWizard);
+    // A Dashboard action can ask for another screen (e.g. "Change the time"
+    // opens the serve plan on Cook).
+    window.addEventListener('hm-open', (e) => {
+      const t = e.detail;
+      if (!['cook', 'settings', 'graph'].includes(t)) return;
+      if (isDesktop) { if (t !== 'graph') modal = t; } else tab = t;
+    });
     const mq = window.matchMedia('(min-width: 1024px)');
     const upd = () => {
       isDesktop = mq.matches;
