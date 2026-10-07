@@ -436,7 +436,7 @@
     window.dispatchEvent(new Event('hm-prefs'));
   }
 
-  // Temperature-reactive panel colors (read by Dashboard via the hm-prefs event).
+  // Food-probe progress bars (read by Dashboard via the hm-prefs event).
   let heatColors = $state(localStorage.getItem('hm.heatColors') !== '0');
   function toggleHeatColors() {
     heatColors = !heatColors;
@@ -1447,9 +1447,9 @@
       <p class="text-xs opacity-50">A centered popup, or a panel that slides out from the side. Phones always use full-screen tabs.</p>
       <label class="flex items-center gap-2 text-sm mt-4">
         <input type="checkbox" checked={heatColors} onchange={toggleHeatColors} />
-        Color temperature panels by progress to target
+        Show progress bars on food probes
       </label>
-      <p class="text-xs opacity-50">Warms each panel as it nears its target (the pit nears its setpoint), turning green once reached.</p>
+      <p class="text-xs opacity-50">A thin bar under each food probe fills toward its target and turns green when it's done. The pit card is only coloured when Pit Guard is warning.</p>
     </div>
   </details>
 

@@ -69,3 +69,18 @@ dialog.hm-dialog::backdrop { background: rgb(0 0 0 / 0.5); }
 .hm-card { background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.06); }
 html.dark .hm-card { background: #171717; border-color: rgba(255, 255, 255, 0.07); }
 
+/* A card that needs a person: a hairline and a faint wash in the alert hue,
+   only while Pit Guard is warning (Cinder for low, Flare Red for hot or a
+   dying fire). Nothing is coloured at rest. */
+.hm-card.hm-alert-warn, html.dark .hm-card.hm-alert-warn {
+  border-color: rgb(255 139 0 / 0.55);
+  background-image: linear-gradient(rgb(255 139 0 / 0.07), rgb(255 139 0 / 0.07));
+}
+.hm-card.hm-alert-bad, html.dark .hm-card.hm-alert-bad {
+  border-color: rgb(251 44 54 / 0.6);
+  background-image: linear-gradient(rgb(251 44 54 / 0.08), rgb(251 44 54 / 0.08));
+}
+/* Tappable probe tiles: the hairline warms on hover. */
+.hm-card.hm-tile { transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1); }
+.hm-card.hm-tile:hover { border-color: rgb(255 105 0 / 0.4); }
+

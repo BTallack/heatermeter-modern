@@ -195,9 +195,9 @@
   // The board's own default names are "Food1"/"Food2"; show them as words.
   const probeLabel = (n, fallback) => (n || fallback).replace(/^Food\s*(\d)$/i, 'Food $1');
   const foods = $derived([
-    { label: probeLabel(names[1], 'Food 1'), val: status.food1, cls: 'text-green-500', pi: 1, ch: 'food1' },
-    { label: probeLabel(names[2], 'Food 2'), val: status.food2, cls: 'text-sky-400', pi: 2, ch: 'food2' },
-    { label: probeLabel(names[3], 'Ambient'), val: status.ambient, cls: 'text-purple-400', pi: 3, ch: 'ambient' },
+    { label: probeLabel(names[1], 'Food 1'), val: status.food1, cls: 'text-green-500', bar: 'bg-green-500', pi: 1, ch: 'food1' },
+    { label: probeLabel(names[2], 'Food 2'), val: status.food2, cls: 'text-sky-400', bar: 'bg-sky-400', pi: 2, ch: 'food2' },
+    { label: probeLabel(names[3], 'Ambient'), val: status.ambient, cls: 'text-purple-400', bar: 'bg-purple-400', pi: 3, ch: 'ambient' },
   ]);
 
   const parseAlarm = (v) => {
@@ -234,28 +234,21 @@
     return '';
   }
 
-  // -- temperature-reactive panel tint (opt-in, Settings -> Appearance) ------
-  // Warms a panel's background as its temp nears the target (probes) or the
-  // setpoint (pit), turning green once reached. Subtle inset overlay so the
-  // card surface + text stay intact. Default on; only shows once cooking.
-  let heatColors = $state(true);
-  function readPrefs() { heatColors = localStorage.getItem('hm.heatColors') !== '0'; }
-  // "Done" by the displayed (rounded) numbers, so a panel turns green exactly
+  // -- colour only where it carries information ------------------------------
+  // The pit card takes colour only while Pit Guard is warning; food tiles show
+  // a thin progress bar toward their target in the probe's own hue, green when
+  // done. (The bars can be turned off in Settings -> Appearance.)
+  let progressBars = $state(true);
+  function readPrefs() { progressBars = localStorage.getItem('hm.heatColors') !== '0'; }
+  // "Done" by the displayed (rounded) numbers, so a probe reads done exactly
   // when the shown temp meets the target (avoids 70.6→"71" looking not-done).
   const doneAt = (val, target) => val != null && target != null && Math.round(val) >= Math.round(target);
-  function panelTint(p) {
-    let c;
-    if (p >= 0.95) c = 'rgba(255,86,48,0.22)';      // ember
-    else if (p >= 0.85) c = 'rgba(255,138,0,0.16)'; // orange
-    else if (p >= 0.6) c = 'rgba(255,193,7,0.10)';  // amber
-    else return '';
-    return 'box-shadow: inset 0 0 0 999px ' + c;
+  function progressFor(f) {
+    const tg = targetFor(f.pi);
+    if (!progressBars || tg == null || tg <= 0 || f.val == null) return null;
+    return { pct: Math.max(0, Math.min(1, f.val / tg)), done: doneAt(f.val, tg) };
   }
-  function tintStyle(val, target) {
-    if (!heatColors || target == null || target <= 0 || val == null) return '';
-    if (doneAt(val, target)) return 'box-shadow: inset 0 0 0 999px rgba(54,179,126,0.22)'; // green
-    return panelTint(val / target);
-  }
+  const guardTone = $derived(pitGuard.fire_dying || pitGuard.overtemp ? 'bad' : pitGuard.low ? 'warn' : null);
 
   // -- live controls: lid open + manual fan override -------------------------
   async function lidOpen() {
@@ -559,7 +552,7 @@
 {/snippet}
 
 {#snippet pit(extra = '')}
-  <section class={'hm-card rounded-3xl p-5 ' + extra} style={tintStyle(status.pit, status.set_point)} aria-labelledby="pit-h">
+  <section class={'hm-card rounded-3xl p-5 ' + (guardTone ? `hm-alert-${guardTone} ` : '') + extra} aria-labelledby="pit-h">
     <div class="flex items-center justify-between gap-2">
       <h2 id="pit-h" class="font-sans text-xs uppercase tracking-widest opacity-50 font-semibold">{names[0] || 'Pit'}</h2>
       <span class={'text-xs px-2 py-0.5 rounded-full font-semibold tabular-nums ' + pillCls}>{freshness ?? ps.label}</span>
@@ -664,7 +657,7 @@
 {/snippet}
 
 {#snippet probeCard(f, i, extra)}
-  <button class={'hm-card rounded-2xl p-4 text-left w-full transition-colors hover:border-orange-500/40 ' + extra} style={tintStyle(f.val, targetFor(f.pi))} onclick={() => openProbe(i)}>
+  <button class={'hm-card hm-tile rounded-2xl p-4 text-left w-full ' + extra} onclick={() => openProbe(i)}>
     <div class="flex items-center justify-between gap-1">
       <span class="text-[11px] uppercase tracking-wider opacity-50 truncate font-semibold">{f.label}</span>
       {#if health[f.ch] === 'disconnected' || health[f.ch] === 'fault'}
@@ -691,6 +684,12 @@
     <div class="text-xs mt-1.5 tabular-nums min-h-4 {targetFor(f.pi) != null && doneAt(f.val, targetFor(f.pi)) ? 'text-green-600 dark:text-green-400 font-semibold' : 'opacity-60'}">
       {#if targetFor(f.pi) != null}→ {targetFor(f.pi)}°{tileState(f)}{/if}
     </div>
+    {#if progressFor(f)}
+      {@const p = progressFor(f)}
+      <div class="mt-2 h-1 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden" aria-hidden="true">
+        <div class={'h-full rounded-full ' + (p.done ? 'bg-green-600 dark:bg-green-500' : f.bar)} style={`width: ${Math.round(p.pct * 100)}%`}></div>
+      </div>
+    {/if}
   </button>
 {/snippet}
 
