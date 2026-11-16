@@ -32,3 +32,6 @@ firmware/backup-*
 
 # Claude Code local config
 .claude/
+
+# Upstream HeaterMeter clone (CapnBry/HeaterMeter), local reference only, never committed
+reference/
